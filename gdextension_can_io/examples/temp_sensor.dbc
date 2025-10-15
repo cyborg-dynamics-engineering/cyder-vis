@@ -1,0 +1,82 @@
+VERSION "0.1"
+
+NS_ :
+    NS_DESC_
+    CM_
+    BA_DEF_
+    BA_
+    VAL_
+    CAT_DEF_
+    CAT_
+    FILTER
+    BA_DEF_DEF_
+    EV_DATA_
+    ENVVAR_DATA_
+    SGTYPE_
+    SGTYPE_VAL_
+    BA_DEF_SGTYPE_
+    BA_SGTYPE_
+    SIG_TYPE_REF_
+    VAL_TABLE_
+    SIG_GROUP_
+    SIG_VALTYPE_
+    SIGTYPE_VALTYPE_
+    BO_TX_BU_
+    BA_DEF_REL_
+    BA_REL_
+    BA_DEF_DEF_REL_
+    BU_SG_REL_
+    BU_EV_REL_
+    BU_BO_REL_
+    SG_MUL_VAL_
+
+BS_: 1000000
+
+BU_: PC X
+
+BO_ 2147483920 SetDeviceId: 1 Vector__XXX
+    SG_ id : 0|8@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2147484176 SetCanBitrate: 1 Vector__XXX
+    SG_ can_bitrate : 0|8@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2148074000 SetStatusRate: 1 Vector__XXX
+    SG_ status_rate : 0|8@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2148112400 SetOdr: 1 Vector__XXX
+    SG_ odr : 0|8@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2148112400 SoftReset: 0 Vector__XXX
+
+BO_ 2148073744 ClearStatus: 0 Vector__XXX
+
+BO_ 2148112656 Reboot: 0 Vector__XXX
+
+BO_ 2147484432 WriteToFlash: 0 Vector__XXX
+
+BO_ 2148073488 Status: 1 Vector__XXX
+    SG_ status : 0|8@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2147549200 Temperatures: 8 Vector__XXX
+    SG_ sensor_1 : 0|16@1+ (1,0) [0|0] "" Vector__XXX
+    SG_ sensor_2 : 16|16@1+ (1,0) [0|0] "" Vector__XXX
+    SG_ sensor_3 : 32|16@1+ (1,0) [0|0] "" Vector__XXX
+    SG_ sensor_4 : 48|16@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2148077584 Ack: 4 Vector__XXX
+    SG_ ident : 0|32@1+ (1,0) [0|0] "" Vector__XXX
+
+SIG_VALTYPE_ 2147549442 accel_scale : 1;
+SIG_VALTYPE_ 2147549442 gyro_scale : 1;
+SIG_VALTYPE_ 2147549954 alpha : 1;
+SIG_VALTYPE_ 2147551234 pitch : 1;
+SIG_VALTYPE_ 2147551234 roll : 1;
+SIG_VALTYPE_ 2147747330 alpha : 1;
+SIG_VALTYPE_ 2147750658 pitch : 1;
+SIG_VALTYPE_ 2147750658 roll : 1;
+SIG_VALTYPE_ 2148008706 pitch : 1;
+SIG_VALTYPE_ 2148008706 roll : 1;
+SIG_VALTYPE_ 2148008962 w : 1;
+SIG_VALTYPE_ 2148008962 x : 1;
+SIG_VALTYPE_ 2148008962 y : 1;
+SIG_VALTYPE_ 2148008962 z : 1;
