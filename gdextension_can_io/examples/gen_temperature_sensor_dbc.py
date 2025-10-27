@@ -74,10 +74,10 @@ messages = [
         "id": "10010",
         "extended_id": True,
         "signals" :{
-            "sensor_1": {"type": "u16", "unit": ""},
-            "sensor_2": {"type": "u16", "unit": ""},
-            "sensor_3": {"type": "u16", "unit": ""},
-            "sensor_4": {"type": "u16", "unit": ""},
+            "sensor_1": {"type": "i16", "unit": ""},
+            "sensor_2": {"type": "i16", "unit": ""},
+            "sensor_3": {"type": "i16", "unit": ""},
+            "sensor_4": {"type": "i16", "unit": ""},
         }
     },
 
@@ -89,6 +89,30 @@ messages = [
             "ident": {"type": "u32", "unit": ""},
         }
     },
+    {
+        "name": "SteinhartA",
+        "id": "50110",
+        "extended_id": True,
+        "signals" :{
+            "a": {"type": "u32", "unit": ""},
+        }
+    },
+        {
+        "name": "SteinhartB",
+        "id": "50210",
+        "extended_id": True,
+        "signals" :{
+            "b": {"type": "u32", "unit": ""},
+        }
+    },
+        {
+        "name": "SteinhartC",
+        "id": "50310",
+        "extended_id": True,
+        "signals" :{
+            "c": {"type": "u32", "unit": ""},
+        }
+    }
 
 ]
 print(gen_dbc(messages))
