@@ -2,8 +2,36 @@ from gen_dbc import gen_dbc
 
 messages = [
     {
+        "name": "Reboot",
+        "id": "10110",
+        "extended_id": True,
+        "signals" :{
+        }
+    },
+    {
+        "name": "SoftReset",
+        "id": "10210",
+        "extended_id": True,
+        "signals" :{
+        }
+    },
+        {
+        "name": "WriteToFlash",
+        "id": "10310",
+        "extended_id": True,
+        "signals" :{
+        }
+    },
+    {
+        "name": "ClearStatus",
+        "id": "10410",
+        "extended_id": True,
+        "signals" :{
+        }
+    },
+    {
         "name": "SetDeviceId",
-        "id": "00110",
+        "id": "20110",
         "extended_id": True,
         "signals" :{
             "id": {"type": "u8", "unit": ""},
@@ -11,7 +39,7 @@ messages = [
     },
     {
         "name": "SetCanBitrate",
-        "id": "00210",
+        "id": "20210",
         "extended_id": True,
         "signals" :{
             "can_bitrate": {"type": "u8", "unit": ""},
@@ -19,30 +47,54 @@ messages = [
     },
     {
         "name": "SetStatusRate",
-        "id": "90210",
+        "id": "20310",
         "extended_id": True,
         "signals" :{
             "status_rate": {"type": "u8", "unit": ""},
         }
     },
     {
+        "name": "GetConfig",
+        "id": "30210",
+        "extended_id": True,
+        "signals" :{
+        }
+    },
+    {
+        "name": "Ack",
+        "id": "40110",
+        "extended_id": True,
+        "signals" :{
+            "ident": {"type": "u32", "unit": ""},
+        }
+    },
+    {
+        "name": "StatusRate",
+        "id": "40310",
+        "extended_id": True,
+        "signals" :{
+            "status_rate": {"type": "u8", "unit": ""},
+        }
+    },
+    {
+        "name": "Status",
+        "id": "70010",
+        "extended_id": True,
+        "signals" :{
+            "status": {"type": "u8", "unit": ""},
+        }
+    },
+    {
         "name": "SetOdr",
-        "id": "50010",
+        "id": "A0110",
         "extended_id": True,
         "signals" :{
             "odr": {"type": "u8", "unit": ""},
         }
     },
     {
-        "name": "SoftReset",
-        "id": "99810",
-        "extended_id": True,
-        "signals" :{
-        }
-    },
-    {
         "name": "SetSteinhartA",
-        "id": "50110",
+        "id": "A0210",
         "extended_id": True,
         "signals" :{
             "a": {"type": "u32", "unit": ""},
@@ -50,7 +102,7 @@ messages = [
     },
         {
         "name": "SetSteinhartB",
-        "id": "50210",
+        "id": "A0310",
         "extended_id": True,
         "signals" :{
             "b": {"type": "u32", "unit": ""},
@@ -58,51 +110,47 @@ messages = [
     },
         {
         "name": "SetSteinhartC",
-        "id": "50310",
+        "id": "A0410",
         "extended_id": True,
         "signals" :{
             "c": {"type": "u32", "unit": ""},
         }
     },
     {
-        "name": "ClearStatus",
-        "id": "90110",
+        "name": "Odr",
+        "id": "C0110",
         "extended_id": True,
         "signals" :{
+            "status_rate": {"type": "u8", "unit": ""},
         }
     },
     {
-        "name": "Reboot",
-        "id": "99910",
+        "name": "SteinhartA",
+        "id": "C0210",
         "extended_id": True,
         "signals" :{
+            "a": {"type": "u32", "unit": ""},
         }
     },
-    {
-        "name": "WriteToFlash",
-        "id": "00310",
+        {
+        "name": "SteinhartB",
+        "id": "C0310",
         "extended_id": True,
         "signals" :{
+            "b": {"type": "u32", "unit": ""},
         }
     },
-    {
-        "name": "GetConfig",
-        "id": "FFE10",
+        {
+        "name": "SteinhartC",
+        "id": "C0410",
         "extended_id": True,
         "signals" :{
-        }
-    },
-    {
-        "name": "Status",
-        "id": "90010",
-        "extended_id": True,
-        "signals" :{
-            "status": {"type": "u8", "unit": ""},
+            "c": {"type": "u32", "unit": ""},
         }
     },
     {
         "name": "Temperatures",
-        "id": "10010",
+        "id": "E0010",
         "extended_id": True,
         "signals" :{
             "sensor_1": {"type": "i16", "unit": ""},
@@ -111,55 +159,6 @@ messages = [
             "sensor_4": {"type": "i16", "unit": ""},
         }
     },
-    {
-        "name": "StatusRate",
-        "id": "80010",
-        "extended_id": True,
-        "signals" :{
-            "status_rate": {"type": "u8", "unit": ""},
-        }
-    },
-    {
-        "name": "Odr",
-        "id": "40010",
-        "extended_id": True,
-        "signals" :{
-            "status_rate": {"type": "u8", "unit": ""},
-        }
-    },
-    {
-        "name": "SteinhartA",
-        "id": "40110",
-        "extended_id": True,
-        "signals" :{
-            "a": {"type": "u32", "unit": ""},
-        }
-    },
-        {
-        "name": "SteinhartB",
-        "id": "40210",
-        "extended_id": True,
-        "signals" :{
-            "b": {"type": "u32", "unit": ""},
-        }
-    },
-        {
-        "name": "SteinhartC",
-        "id": "40310",
-        "extended_id": True,
-        "signals" :{
-            "c": {"type": "u32", "unit": ""},
-        }
-    },
-    {
-        "name": "Ack",
-        "id": "91010",
-        "extended_id": True,
-        "signals" :{
-            "ident": {"type": "u32", "unit": ""},
-        }
-    },
-
-
 ]
+
 print(gen_dbc(messages))

@@ -34,68 +34,68 @@ BS_: 1000000
 
 BU_: PC X
 
-BO_ 2147483920 SetDeviceId: 1 Vector__XXX
+BO_ 2147549456 Reboot: 0 Vector__XXX
+
+BO_ 2147549712 SoftReset: 0 Vector__XXX
+
+BO_ 2147549968 WriteToFlash: 0 Vector__XXX
+
+BO_ 2147550224 ClearStatus: 0 Vector__XXX
+
+BO_ 2147614992 SetDeviceId: 1 Vector__XXX
     SG_ id : 0|8@1+ (1,0) [0|0] "" Vector__XXX
 
-BO_ 2147484176 SetCanBitrate: 1 Vector__XXX
+BO_ 2147615248 SetCanBitrate: 1 Vector__XXX
     SG_ can_bitrate : 0|8@1+ (1,0) [0|0] "" Vector__XXX
 
-BO_ 2148074000 SetStatusRate: 1 Vector__XXX
+BO_ 2147615504 SetStatusRate: 1 Vector__XXX
     SG_ status_rate : 0|8@1+ (1,0) [0|0] "" Vector__XXX
 
-BO_ 2147811344 SetOdr: 1 Vector__XXX
-    SG_ odr : 0|8@1+ (1,0) [0|0] "" Vector__XXX
+BO_ 2147680784 GetConfig: 0 Vector__XXX
 
-BO_ 2148112400 SoftReset: 0 Vector__XXX
+BO_ 2147746064 Ack: 4 Vector__XXX
+    SG_ ident : 0|32@1+ (1,0) [0|0] "" Vector__XXX
 
-BO_ 2147811600 SetSteinhartA: 4 Vector__XXX
-    SG_ a : 0|32@1+ (1,0) [0|0] "" Vector__XXX
+BO_ 2147746576 StatusRate: 1 Vector__XXX
+    SG_ status_rate : 0|8@1+ (1,0) [0|0] "" Vector__XXX
 
-BO_ 2147811856 SetSteinhartB: 4 Vector__XXX
-    SG_ b : 0|32@1+ (1,0) [0|0] "" Vector__XXX
-
-BO_ 2147812112 SetSteinhartC: 4 Vector__XXX
-    SG_ c : 0|32@1+ (1,0) [0|0] "" Vector__XXX
-
-BO_ 2148073744 ClearStatus: 0 Vector__XXX
-
-BO_ 2148112656 Reboot: 0 Vector__XXX
-
-BO_ 2147484432 WriteToFlash: 0 Vector__XXX
-
-BO_ 2148531728 GetConfig: 0 Vector__XXX
-
-BO_ 2148073488 Status: 1 Vector__XXX
+BO_ 2147942416 Status: 1 Vector__XXX
     SG_ status : 0|8@1+ (1,0) [0|0] "" Vector__XXX
 
-BO_ 2147549200 Temperatures: 8 Vector__XXX
+BO_ 2148139280 SetOdr: 1 Vector__XXX
+    SG_ odr : 0|8@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2148139536 SetSteinhartA: 4 Vector__XXX
+    SG_ a : 0|32@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2148139792 SetSteinhartB: 4 Vector__XXX
+    SG_ b : 0|32@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2148140048 SetSteinhartC: 4 Vector__XXX
+    SG_ c : 0|32@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2148270352 Odr: 1 Vector__XXX
+    SG_ status_rate : 0|8@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2148270608 SteinhartA: 4 Vector__XXX
+    SG_ a : 0|32@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2148270864 SteinhartB: 4 Vector__XXX
+    SG_ b : 0|32@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2148271120 SteinhartC: 4 Vector__XXX
+    SG_ c : 0|32@1+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 2148401168 Temperatures: 8 Vector__XXX
     SG_ sensor_1 : 0|16@1- (1,0) [0|0] "" Vector__XXX
     SG_ sensor_2 : 16|16@1- (1,0) [0|0] "" Vector__XXX
     SG_ sensor_3 : 32|16@1- (1,0) [0|0] "" Vector__XXX
     SG_ sensor_4 : 48|16@1- (1,0) [0|0] "" Vector__XXX
 
-BO_ 2148007952 StatusRate: 1 Vector__XXX
-    SG_ status_rate : 0|8@1+ (1,0) [0|0] "" Vector__XXX
 
-BO_ 2147745808 Odr: 1 Vector__XXX
-    SG_ status_rate : 0|8@1+ (1,0) [0|0] "" Vector__XXX
-
-BO_ 2147746064 SteinhartA: 4 Vector__XXX
-    SG_ a : 0|32@1+ (1,0) [0|0] "" Vector__XXX
-
-BO_ 2147746320 SteinhartB: 4 Vector__XXX
-    SG_ b : 0|32@1+ (1,0) [0|0] "" Vector__XXX
-
-BO_ 2147746576 SteinhartC: 4 Vector__XXX
-    SG_ c : 0|32@1+ (1,0) [0|0] "" Vector__XXX
-
-BO_ 2148077584 Ack: 4 Vector__XXX
-    SG_ ident : 0|32@1+ (1,0) [0|0] "" Vector__XXX
-
-
-SIG_VALTYPE_ 2147811600 a : 1;
-SIG_VALTYPE_ 2147811856 b : 1;
-SIG_VALTYPE_ 2147812112 c : 1;
-SIG_VALTYPE_ 2147746064 a : 1;
-SIG_VALTYPE_ 2147746064 b : 1;
-SIG_VALTYPE_ 2147746064 c : 1;
+SIG_VALTYPE_ 2148139536 a : 1;
+SIG_VALTYPE_ 2148139792 b : 1;
+SIG_VALTYPE_ 2148140048 c : 1;
+SIG_VALTYPE_ 2148270608 a : 1;
+SIG_VALTYPE_ 2148270864 b : 1;
+SIG_VALTYPE_ 2148271120 c : 1;
