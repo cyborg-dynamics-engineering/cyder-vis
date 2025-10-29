@@ -19,7 +19,7 @@ messages = [
     },
     {
         "name": "SetStatusRate",
-        "id": "0x90210",
+        "id": "90210",
         "extended_id": True,
         "signals" :{
             "status_rate": {"type": "u8", "unit": ""},
@@ -27,7 +27,7 @@ messages = [
     },
     {
         "name": "SetOdr",
-        "id": "99810",
+        "id": "50010",
         "extended_id": True,
         "signals" :{
             "odr": {"type": "u8", "unit": ""},
@@ -38,6 +38,30 @@ messages = [
         "id": "99810",
         "extended_id": True,
         "signals" :{
+        }
+    },
+    {
+        "name": "SetSteinhartA",
+        "id": "50110",
+        "extended_id": True,
+        "signals" :{
+            "a": {"type": "u32", "unit": ""},
+        }
+    },
+        {
+        "name": "SetSteinhartB",
+        "id": "50210",
+        "extended_id": True,
+        "signals" :{
+            "b": {"type": "u32", "unit": ""},
+        }
+    },
+        {
+        "name": "SetSteinhartC",
+        "id": "50310",
+        "extended_id": True,
+        "signals" :{
+            "c": {"type": "u32", "unit": ""},
         }
     },
     {
@@ -62,6 +86,13 @@ messages = [
         }
     },
     {
+        "name": "GetConfig",
+        "id": "FFE10",
+        "extended_id": True,
+        "signals" :{
+        }
+    },
+    {
         "name": "Status",
         "id": "90010",
         "extended_id": True,
@@ -80,7 +111,46 @@ messages = [
             "sensor_4": {"type": "i16", "unit": ""},
         }
     },
-
+    {
+        "name": "StatusRate",
+        "id": "80010",
+        "extended_id": True,
+        "signals" :{
+            "status_rate": {"type": "u8", "unit": ""},
+        }
+    },
+    {
+        "name": "Odr",
+        "id": "40010",
+        "extended_id": True,
+        "signals" :{
+            "status_rate": {"type": "u8", "unit": ""},
+        }
+    },
+    {
+        "name": "SteinhartA",
+        "id": "40110",
+        "extended_id": True,
+        "signals" :{
+            "a": {"type": "u32", "unit": ""},
+        }
+    },
+        {
+        "name": "SteinhartB",
+        "id": "40210",
+        "extended_id": True,
+        "signals" :{
+            "b": {"type": "u32", "unit": ""},
+        }
+    },
+        {
+        "name": "SteinhartC",
+        "id": "40310",
+        "extended_id": True,
+        "signals" :{
+            "c": {"type": "u32", "unit": ""},
+        }
+    },
     {
         "name": "Ack",
         "id": "91010",
@@ -89,30 +159,7 @@ messages = [
             "ident": {"type": "u32", "unit": ""},
         }
     },
-    {
-        "name": "SteinhartA",
-        "id": "50110",
-        "extended_id": True,
-        "signals" :{
-            "a": {"type": "u32", "unit": ""},
-        }
-    },
-        {
-        "name": "SteinhartB",
-        "id": "50210",
-        "extended_id": True,
-        "signals" :{
-            "b": {"type": "u32", "unit": ""},
-        }
-    },
-        {
-        "name": "SteinhartC",
-        "id": "50310",
-        "extended_id": True,
-        "signals" :{
-            "c": {"type": "u32", "unit": ""},
-        }
-    }
+
 
 ]
 print(gen_dbc(messages))
