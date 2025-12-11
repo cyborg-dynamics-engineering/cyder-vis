@@ -6,4 +6,4 @@ const MIN_Y: int = 400
 
 
 func _ready() -> void:
-    DisplayServer.window_set_min_size(Vector2i(MIN_X, MIN_Y))
+	DisplayServer.window_set_min_size(Vector2i(MIN_X, MIN_Y))

@@ -91,9 +91,10 @@ impl GodotCanBridge {
                         ));
                         godot_error!("{error:?}");
                     }
-                    can_parser::Error::CanDbc() => {
-                        error_alert_godot(format!("DBC File failed to parse"))
-                    }
+                    can_parser::Error::CanDbc(error) => error_alert_godot(format!(
+                        "DBC File failed to parse: \n{}",
+                        error.to_string()
+                    )),
                 }
                 false
             }

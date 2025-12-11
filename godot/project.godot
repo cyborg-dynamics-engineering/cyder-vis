@@ -30,6 +30,33 @@ enabled=PackedStringArray("res://addons/graph_2d/plugin.cfg")
 
 timers/tooltip_delay_sec=0.2
 
+[importer_defaults]
+
+font_data_dynamic={
+"Compress": null,
+"Fallbacks": null,
+"Rendering": null,
+"allow_system_fallback": true,
+"antialiasing": 1,
+"compress": true,
+"disable_embedded_bitmaps": true,
+"fallbacks": [],
+"force_autohinter": false,
+"generate_mipmaps": false,
+"hinting": 1,
+"keep_rounding_remainders": true,
+"language_support": {},
+"modulate_color_glyphs": false,
+"msdf_pixel_range": 8,
+"msdf_size": 48,
+"multichannel_signed_distance_field": false,
+"opentype_features": {},
+"oversampling": 0.0,
+"preload": [],
+"script_support": {},
+"subpixel_positioning": 4
+}
+
 [rendering]
 
 renderer/rendering_method="gl_compatibility"

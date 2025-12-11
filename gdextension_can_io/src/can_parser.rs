@@ -5,7 +5,7 @@
 /// Can optionally utilise a CAN DBC file to parse the raw data into named items in the Godot Arrays.
 ///
 use crate::{CanEntry, CanId};
-use can_dbc::{ByteOrder, Dbc};
+use can_dbc::{ByteOrder, Dbc, DbcError};
 use core::panic;
 use crosscan::can::CanFrame;
 use godot::builtin::{GString, VariantArray};
@@ -15,7 +15,7 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
-    CanDbc(),
+    CanDbc(DbcError),
 }
 
 impl From<std::io::Error> for Error {
@@ -48,13 +48,13 @@ impl CanParser {
 
     /// Loads a new DBC file into the CanParser for future deserialisation
     pub fn open_dbc(&mut self, file_path: String) -> Result<(), Error> {
-        let data = std::fs::read_to_string(file_path)?;
+        let data = std::fs::read_to_string(file_path.clone())?;
         match Dbc::try_from(data.as_str()) {
             Ok(dbc) => {
                 self.dbc = Some(dbc);
                 Ok(())
             }
-            Err(_) => Err(Error::CanDbc()),
+            Err(e) => Err(Error::CanDbc(e)),
         }
     }
 
