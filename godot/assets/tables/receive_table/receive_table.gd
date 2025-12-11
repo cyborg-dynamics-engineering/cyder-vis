@@ -308,7 +308,7 @@ class ReceiveTableEntry:
 					# If the can graph is plotting this data point, forward it to the graph
 					var label: String = _data[i - 1]
 					if _receive_table.can_graph.has_plot_element(self, label):
-						_receive_table.can_graph.add_data_point(self, label, _last_receive_time_ms, float(_data[i]))
+						_receive_table.can_graph.add_data_point(self, label, _last_receive_time_ms, float(_data[i].trim_suffix("*")))
 			else:
 				# For regular labels, update with CAN byte formatting
 				ReceiveTable._update_label_and_font_size(entry_row_cells[DATA_START_IDX + i].get_node("Label"), _format_can_data_byte(int(_data[i])), CELL_WIDTHS[DATA_START_IDX])
