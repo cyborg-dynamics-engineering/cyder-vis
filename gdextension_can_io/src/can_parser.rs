@@ -5,14 +5,12 @@
 /// Can optionally utilise a CAN DBC file to parse the raw data into named items in the Godot Arrays.
 ///
 use crate::{CanEntry, CanId};
-use can_dbc::{ByteOrder, DBC};
+use can_dbc::{ByteOrder, Dbc};
 use core::panic;
 use crosscan::can::CanFrame;
 use godot::builtin::{GString, VariantArray};
 use godot::prelude::*;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::prelude::*;
 
 #[derive(Debug)]
 pub enum Error {
@@ -40,7 +38,7 @@ mod dbc_helpers {
 }
 
 pub struct CanParser {
-    dbc: Option<DBC>,
+    dbc: Option<Dbc>,
 }
 
 impl CanParser {
@@ -50,11 +48,8 @@ impl CanParser {
 
     /// Loads a new DBC file into the CanParser for future deserialisation
     pub fn open_dbc(&mut self, file_path: String) -> Result<(), Error> {
-        let mut file = File::open(file_path)?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
-
-        match DBC::from_slice(&buffer) {
+        let data = std::fs::read_to_string(file_path)?;
+        match Dbc::try_from(data.as_str()) {
             Ok(dbc) => {
                 self.dbc = Some(dbc);
                 Ok(())
@@ -94,9 +89,8 @@ impl CanParser {
             let query_id = dbc_helpers::get_message_id(&can_entry.frame);
 
             // if dbc attempt to deserialize
-            if let Some(message_info) = dbc.messages().iter().find(|m| m.message_id() == &query_id)
-            {
-                godot_can_entry.push(&GString::from(message_info.message_name()).to_variant());
+            if let Some(message_info) = dbc.messages.iter().find(|m| m.id == query_id) {
+                godot_can_entry.push(&GString::from(message_info.name.clone()).to_variant());
 
                 // TODO: Check if can deserialize
                 godot_can_entry = self.deserialise_dbc_data(
@@ -130,8 +124,8 @@ impl CanParser {
         frame: CanFrame,
         message_info: &can_dbc::Message,
     ) -> Array<Variant> {
-        for signal in message_info.signals() {
-            godot_can_entry.push(&GString::from(signal.name()).to_variant());
+        for signal in &message_info.signals {
+            godot_can_entry.push(&GString::from(signal.name.clone()).to_variant());
 
             let dbc = match &self.dbc {
                 Some(table) => table,
@@ -141,44 +135,60 @@ impl CanParser {
             };
 
             let mut bytes = frame.data().to_vec();
-            if *signal.byte_order() == ByteOrder::BigEndian {
+            if signal.byte_order == ByteOrder::BigEndian {
                 CanParser::reverse_bit_order(&mut bytes);
             }
 
-            let formatted_value = match dbc
-                .extended_value_type_for_signal(*message_info.message_id(), signal.name())
+            let value = match dbc
+                .extended_value_type_for_signal(message_info.id, signal.name.as_str())
                 .unwrap_or(&can_dbc::SignalExtendedValueType::SignedOrUnsignedInteger)
             {
                 can_dbc::SignalExtendedValueType::SignedOrUnsignedInteger => {
-                    let start_bit = usize::try_from(*signal.start_bit()).unwrap();
-                    let length = usize::try_from(*signal.signal_size()).unwrap();
-                    match signal.value_type() {
+                    let start_bit = usize::try_from(signal.start_bit).unwrap();
+                    let length = usize::try_from(signal.size).unwrap();
+                    match signal.value_type {
                         can_dbc::ValueType::Signed => {
-                            format!(
-                                "{:?}",
-                                CanParser::extract_bits_i64(bytes, start_bit, length)
-                            )
+                            CanParser::extract_bits_i64(bytes, start_bit, length) as f64
+                                * signal.factor
+                                + signal.offset
                         }
                         can_dbc::ValueType::Unsigned => {
-                            format!(
-                                "{:?}",
-                                CanParser::extract_bits_u64(bytes, start_bit, length)
-                            )
+                            CanParser::extract_bits_u64(bytes, start_bit, length) as f64
+                                * signal.factor
+                                + signal.offset
                         }
                     }
                 }
                 can_dbc::SignalExtendedValueType::IEEEfloat32Bit => {
-                    let start_bit = usize::try_from(*signal.start_bit()).unwrap();
+                    let start_bit = usize::try_from(signal.start_bit).unwrap();
                     let raw_value = CanParser::extract_bits_u64(bytes, start_bit, 32) as u32;
-                    format!("{:?}", f32::from_bits(raw_value))
+
+                    f32::from_bits(raw_value) as f64 * signal.factor + signal.offset
                 }
                 can_dbc::SignalExtendedValueType::IEEEdouble64bit => {
-                    let start_bit = usize::try_from(*signal.start_bit()).unwrap();
+                    let start_bit = usize::try_from(signal.start_bit).unwrap();
                     let raw_value = CanParser::extract_bits_u64(bytes, start_bit, 64);
-                    format!("{:?}", f64::from_bits(raw_value))
+
+                    f64::from_bits(raw_value) * signal.factor + signal.offset
                 }
             };
-            godot_can_entry.push(&GString::from(formatted_value).to_variant());
+
+            let formatted_value = format!("{:?}", value)
+                .trim_end_matches('0')
+                .trim_end_matches('.')
+                .to_string();
+
+            // Add asterix if values falls outside bounds
+            let formatted_value_with_bounds = format!(
+                "{}{}",
+                formatted_value,
+                match value < signal.min || value > signal.max {
+                    true => "*",
+                    false => "",
+                }
+            );
+
+            godot_can_entry.push(&GString::from(formatted_value_with_bounds).to_variant());
         }
         godot_can_entry
     }
