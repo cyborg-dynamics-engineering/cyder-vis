@@ -11,7 +11,7 @@ var _ignore_scroll_changes := true
 const TIMESTAMP_IDX = 0
 const CAN_ID_IDX = 1
 const LENGTH_IDX = 2
-const DATA_START_IDX = 4
+const DATA_START_IDX = 3
 const MAX_NUMBER_OF_LINES = 100
 
 func _ready() -> void:
