@@ -23,17 +23,30 @@ unsafe impl ExtensionLibrary for CanGDExtension {}
 #[derive(GodotClass)]
 #[class(base=Node)]
 struct GodotCanBridge {
+    /// Abstracted tool for parsing semantic data from a CAN frame (using a DBC file if provided)
     can_parser: CanParser,
+    /// A thread handle for the CAN 'read' task
     read_handle: Option<tokio::task::JoinHandle<()>>,
+    /// The OS interface handle of the CAN bus
     interface: String,
+    /// The bitrate of the CAN bus
     bitrate: Arc<Mutex<u32>>,
+    /// Holds the estimated number of bits sent over the bus. Should be reset every time its read
     bit_counter: Arc<Mutex<usize>>,
+    /// A table containing the parsed CAN messages as entries for a given CAN ID. New messages with a given CAN ID should replace the existing data in the old entry
     can_entries: Arc<Mutex<HashMap<CanId, CanEntry>>>,
+    /// Queue of CanFrames that have been requested to send. Messages should be removed from the queue once sent
     sending_queue: Arc<Mutex<VecDeque<CanFrame>>>,
+    /// True if the CanBridge has been requested to terminate
     closure_requested: Arc<Mutex<bool>>,
+    /// The threading runtime environment
     runtime: tokio::runtime::Runtime,
+    /// The time that the CAN bridge started running
     start_time: Arc<Mutex<Instant>>,
+    /// Holds the recent can frames with timestamps for trace
+    recent_can_history: Arc<Mutex<Vec<CanFrame>>>,
 
+    /// Base Godot class (Rust module will be implemented as a Node in Godot)
     base: Base<Node>,
 }
 
@@ -63,6 +76,7 @@ impl INode for GodotCanBridge {
             closure_requested: Arc::new(Mutex::new(false)),
             runtime: Runtime::new().unwrap(),
             start_time: Arc::new(Mutex::new(Instant::now())),
+            recent_can_history: Arc::new(Mutex::new(Vec::new())),
             base,
         }
     }
@@ -129,6 +143,7 @@ impl GodotCanBridge {
         let sending_queue = Arc::clone(&self.sending_queue);
         let closure_requested = Arc::clone(&self.closure_requested);
         let start_time = Arc::clone(&self.start_time);
+        let recent_can_history = Arc::clone(&self.recent_can_history);
         self.read_handle = Some(tokio::spawn(async {
             read_can(
                 interface_name,
@@ -138,6 +153,7 @@ impl GodotCanBridge {
                 sending_queue,
                 closure_requested,
                 start_time,
+                recent_can_history,
             )
             .await;
         }));
@@ -234,6 +250,33 @@ impl GodotCanBridge {
         }
         0
     }
+
+    #[func]
+    fn get_recent_can_msgs(&mut self) -> VariantArray {
+        if self.is_alive() {
+            let mut can_history = self.runtime.block_on(self.recent_can_history.lock());
+            let mut gd_can_history = VariantArray::new();
+            for frame in can_history.iter() {
+                let mut gd_can_frame = VariantArray::new();
+
+                let gd_timestamp = match frame.timestamp() {
+                    Some(ts) => ts,
+                    None => 0,
+                };
+                gd_can_frame.push(&GString::from(format!("{:?}", gd_timestamp)).to_variant());
+                gd_can_frame.push(&GString::from(format!("{:?}", frame.id())).to_variant());
+                gd_can_frame.push(&GString::from(format!("{:?}", frame.dlc())).to_variant());
+                for byte in frame.data() {
+                    gd_can_frame.push(&GString::from(format!("{:?}", byte)).to_variant())
+                }
+
+                gd_can_history.push(&gd_can_frame.to_variant());
+            }
+            (*can_history).clear();
+            return gd_can_history;
+        }
+        VariantArray::new()
+    }
 }
 
 async fn read_can(
@@ -244,6 +287,7 @@ async fn read_can(
     sending_queue: Arc<Mutex<VecDeque<CanFrame>>>,
     closure_requested: Arc<Mutex<bool>>,
     start_time: Arc<Mutex<Instant>>,
+    recent_can_history: Arc<Mutex<Vec<CanFrame>>>,
 ) {
     // Select a specific CAN Socket implementation for the supported operating systems
     #[cfg(target_os = "linux")]
@@ -318,6 +362,12 @@ async fn read_can(
 
                 let current_timestamp_us = { start_time.lock().await.elapsed().as_micros() };
 
+                // Add to the recent CAN history
+                let mut t = frame.clone();
+                t.set_timestamp(Some(current_timestamp_us.try_into().unwrap()));
+                recent_can_history.lock().await.push(t);
+
+                // Check if this msg's CAN ID is in the CanEntry table
                 let mut can_entries = can_entries.lock().await;
                 match can_entries.entry(frame.id()) {
                     Entry::Occupied(mut occupied_entry) => {
