@@ -265,6 +265,8 @@ impl GodotCanBridge {
                 };
                 gd_can_frame.push(&GString::from(format!("{:?}", gd_timestamp)).to_variant());
                 gd_can_frame.push(&GString::from(format!("{:?}", frame.id())).to_variant());
+                gd_can_frame
+                    .push(&GString::from(format!("{:?}", frame.is_extended())).to_variant());
                 gd_can_frame.push(&GString::from(format!("{:?}", frame.dlc())).to_variant());
                 for byte in frame.data() {
                     gd_can_frame.push(&GString::from(format!("{:?}", byte)).to_variant())

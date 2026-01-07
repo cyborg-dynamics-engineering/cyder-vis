@@ -10,8 +10,9 @@ var _ignore_scroll_changes := true
 
 const TIMESTAMP_IDX = 0
 const CAN_ID_IDX = 1
-const LENGTH_IDX = 2
-const DATA_START_IDX = 3
+const IS_EXTENDED_IDX = 2
+const LENGTH_IDX = 3
+const DATA_START_IDX = 4
 const MAX_NUMBER_OF_LINES = 100
 
 func _ready() -> void:
@@ -63,9 +64,15 @@ func _append_text(line: String) -> void:
 
 func _format_raw_frame(frame: Array) -> String:
 	var frame_text: String = ""
-	frame_text += ("%08d " % int(frame[TIMESTAMP_IDX]))
-	frame_text += ("%03x " % int(frame[CAN_ID_IDX])).to_upper()
-	frame_text += ("[%01d] " % int(frame[LENGTH_IDX]))
+	frame_text += ("%011d  " % int(frame[TIMESTAMP_IDX]))
+
+	var is_extended: bool = (frame[IS_EXTENDED_IDX].to_lower() == "true")
+	if is_extended:
+		frame_text += ("%08x   " % int(frame[CAN_ID_IDX])).to_upper()
+	else:
+		frame_text += ("%03x   " % int(frame[CAN_ID_IDX])).to_upper()
+
+	frame_text += ("[%01d]  " % int(frame[LENGTH_IDX]))
 	for data_idx in range(DATA_START_IDX, frame.size()):
 		frame_text += ("%02x " % int(frame[data_idx])).to_upper()
 
