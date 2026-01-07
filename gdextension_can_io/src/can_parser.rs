@@ -75,6 +75,44 @@ impl CanParser {
         godot_can_table
     }
 
+    // Parses an individual CAN frame as a String if it exists in the DBC file
+    pub fn parse_frame_as_string(&self, frame: &CanFrame) -> Option<String> {
+        let mut frame_string = String::new();
+
+        // Query if a dbc entry exists for this id
+        if let Some(dbc) = &self.dbc {
+            let query_id = dbc_helpers::get_message_id(frame);
+
+            // If dbc attempt to deserialize
+            if let Some(message_info) = dbc.messages.iter().find(|m| m.id == query_id) {
+                for signal in &message_info.signals {
+                    frame_string.push_str("  ");
+                    frame_string.push_str(&signal.name.clone());
+                    frame_string.push_str(" -> ");
+
+                    let mut bytes = frame.data().to_vec();
+                    if signal.byte_order == ByteOrder::BigEndian {
+                        CanParser::reverse_bit_order(&mut bytes);
+                    }
+
+                    frame_string.push_str(&self.deserialise_signal_value(
+                        message_info,
+                        signal,
+                        bytes,
+                    ));
+                    frame_string.push_str("\n");
+                }
+                return Some(frame_string);
+            }
+
+            // CAN ID does not exist in DBC file
+            return None;
+        }
+
+        // No DBC file exists
+        None
+    }
+
     /// Parses a given CanEntry into a Godot CAN entry. Will optionally use a DBC for deserialisation if provided.
     fn parse_can_entry(&self, can_entry: &CanEntry) -> Array<Variant> {
         let mut godot_can_entry = VariantArray::new();
@@ -127,78 +165,80 @@ impl CanParser {
         for signal in &message_info.signals {
             godot_can_entry.push(&GString::from(signal.name.clone()).to_variant());
 
-            let dbc = match &self.dbc {
-                Some(table) => table,
-                None => {
-                    panic!("Attempted to deserialise data using DBC when no DBC table has been set")
-                }
-            };
+            let mut bytes = frame.data().to_vec();
+            if signal.byte_order == ByteOrder::BigEndian {
+                CanParser::reverse_bit_order(&mut bytes);
+            }
 
-            let value = match dbc
-                .extended_value_type_for_signal(message_info.id, signal.name.as_str())
-                .unwrap_or(&can_dbc::SignalExtendedValueType::SignedOrUnsignedInteger)
-            {
-                can_dbc::SignalExtendedValueType::SignedOrUnsignedInteger => {
-                    let start_bit = usize::try_from(signal.start_bit).unwrap();
-                    let length = usize::try_from(signal.size).unwrap();
-                    match signal.value_type {
-                        can_dbc::ValueType::Signed => {
-                            CanParser::extract_bits_i64(
-                                frame.data(),
-                                start_bit,
-                                length,
-                                signal.byte_order,
-                            ) as f64
-                                * signal.factor
-                                + signal.offset
-                        }
-                        can_dbc::ValueType::Unsigned => {
-                            CanParser::extract_bits_u64(
-                                frame.data(),
-                                start_bit,
-                                length,
-                                signal.byte_order,
-                            ) as f64
-                                * signal.factor
-                                + signal.offset
-                        }
-                    }
-                }
-                can_dbc::SignalExtendedValueType::IEEEfloat32Bit => {
-                    let start_bit = usize::try_from(signal.start_bit).unwrap();
-                    let raw_value =
-                        CanParser::extract_bits_u64(frame.data(), start_bit, 32, signal.byte_order)
-                            as u32;
-
-                    f32::from_bits(raw_value) as f64 * signal.factor + signal.offset
-                }
-                can_dbc::SignalExtendedValueType::IEEEdouble64bit => {
-                    let start_bit = usize::try_from(signal.start_bit).unwrap();
-                    let raw_value =
-                        CanParser::extract_bits_u64(frame.data(), start_bit, 64, signal.byte_order);
-
-                    f64::from_bits(raw_value) * signal.factor + signal.offset
-                }
-            };
-
-            let formatted_value = format!("{:.4}", value)
-                .trim_end_matches('0')
-                .trim_end_matches('.')
-                .to_string();
-
-            // Add asterix if values falls outside bounds
-            let formatted_value_with_bounds = format!(
-                "{}{}",
-                formatted_value,
-                match value < signal.min || value > signal.max {
-                    true => "*",
-                    false => "",
-                }
+            godot_can_entry.push(
+                &GString::from(self.deserialise_signal_value(message_info, signal, bytes))
+                    .to_variant(),
             );
-
-            godot_can_entry.push(&GString::from(formatted_value_with_bounds).to_variant());
         }
         godot_can_entry
+    }
+
+    // Deserialises the value of a given signal
+    fn deserialise_signal_value(
+        &self,
+        message_info: &can_dbc::Message,
+        signal: &can_dbc::Signal,
+        bytes: Vec<u8>,
+    ) -> String {
+        let dbc = match &self.dbc {
+            Some(table) => table,
+            None => {
+                panic!("Attempted to deserialise data using DBC when no DBC table has been set")
+            }
+        };
+
+        let value = match dbc
+            .extended_value_type_for_signal(message_info.id, signal.name.as_str())
+            .unwrap_or(&can_dbc::SignalExtendedValueType::SignedOrUnsignedInteger)
+        {
+            can_dbc::SignalExtendedValueType::SignedOrUnsignedInteger => {
+                let start_bit = usize::try_from(signal.start_bit).unwrap();
+                let length = usize::try_from(signal.size).unwrap();
+                match signal.value_type {
+                    can_dbc::ValueType::Signed => {
+                        CanParser::extract_bits_i64(bytes, start_bit, length) as f64 * signal.factor
+                            + signal.offset
+                    }
+                    can_dbc::ValueType::Unsigned => {
+                        CanParser::extract_bits_u64(bytes, start_bit, length) as f64 * signal.factor
+                            + signal.offset
+                    }
+                }
+            }
+            can_dbc::SignalExtendedValueType::IEEEfloat32Bit => {
+                let start_bit = usize::try_from(signal.start_bit).unwrap();
+                let raw_value = CanParser::extract_bits_u64(bytes, start_bit, 32) as u32;
+
+                f32::from_bits(raw_value) as f64 * signal.factor + signal.offset
+            }
+            can_dbc::SignalExtendedValueType::IEEEdouble64bit => {
+                let start_bit = usize::try_from(signal.start_bit).unwrap();
+                let raw_value = CanParser::extract_bits_u64(bytes, start_bit, 64);
+
+                f64::from_bits(raw_value) * signal.factor + signal.offset
+            }
+        };
+
+        let formatted_value = format!("{:?}", value)
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string();
+
+        // Add asterix if values falls outside bounds
+        let formatted_value_with_bounds = format!(
+            "{}{}",
+            formatted_value,
+            match value < signal.min || value > signal.max {
+                true => "*",
+                false => "",
+            }
+        );
+        formatted_value_with_bounds
     }
 
     /// Deserialises and appends the raw byte data from the CAN frame to the Godot CAN entry

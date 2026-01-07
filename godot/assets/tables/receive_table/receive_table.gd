@@ -16,7 +16,6 @@ class_name ReceiveTable
 @onready var table_button = preload("res://assets/tables/table_button.tscn")
 @onready var rows: Control = get_node("Rows")
 @onready var existing_can_entries: Dictionary[int, ReceiveTableEntry] = {}
-@onready var starting_timestamp: int = -1
 
 const TIMESTAMP_IDX = 0
 const FREQUENCY_IDX = 1
@@ -64,10 +63,6 @@ func render(data: Array) -> void:
 	# Do nothing if no data received
 	if not data:
 		return
-
-	# Set starting timestamp if not set yet
-	if starting_timestamp == -1:
-		starting_timestamp = int(data[0][TIMESTAMP_IDX])
 
 	# Update current timestamp for realtime plot
 	can_graph.update_current_time(_get_largest_timestamp(data))
@@ -123,7 +118,7 @@ func update_formatting() -> void:
 
 # Converts a microsecond system timestamp to seconds from start of program
 func timestamp_to_s(timestamp: String) -> float:
-	return (int(timestamp) - starting_timestamp) * 1e-6
+	return int(timestamp) * 1e-6
 
 
 # Returns the most recent timestamp from an array of incoming CAN messages
