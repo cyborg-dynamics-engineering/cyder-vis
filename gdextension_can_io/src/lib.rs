@@ -44,7 +44,7 @@ struct GodotCanBridge {
     /// The time that the CAN bridge started running
     start_time: Arc<Mutex<Instant>>,
     /// Holds the recent can frames with timestamps for trace
-    recent_can_history: Arc<Mutex<Vec<CanFrame>>>,
+    trace_history: Arc<Mutex<VecDeque<CanFrame>>>,
 
     /// Base Godot class (Rust module will be implemented as a Node in Godot)
     base: Base<Node>,
@@ -76,7 +76,7 @@ impl INode for GodotCanBridge {
             closure_requested: Arc::new(Mutex::new(false)),
             runtime: Runtime::new().unwrap(),
             start_time: Arc::new(Mutex::new(Instant::now())),
-            recent_can_history: Arc::new(Mutex::new(Vec::new())),
+            trace_history: Arc::new(Mutex::new(VecDeque::new())),
             base,
         }
     }
@@ -143,7 +143,7 @@ impl GodotCanBridge {
         let sending_queue = Arc::clone(&self.sending_queue);
         let closure_requested = Arc::clone(&self.closure_requested);
         let start_time = Arc::clone(&self.start_time);
-        let recent_can_history = Arc::clone(&self.recent_can_history);
+        let trace_history = Arc::clone(&self.trace_history);
         self.read_handle = Some(tokio::spawn(async {
             read_can(
                 interface_name,
@@ -153,7 +153,7 @@ impl GodotCanBridge {
                 sending_queue,
                 closure_requested,
                 start_time,
-                recent_can_history,
+                trace_history,
             )
             .await;
         }));
@@ -252,37 +252,23 @@ impl GodotCanBridge {
     }
 
     #[func]
-    fn get_recent_can_msgs(&mut self) -> VariantArray {
+    fn get_recent_can_msgs(&mut self) -> GString {
         if self.is_alive() {
-            let mut can_history = self.runtime.block_on(self.recent_can_history.lock());
-            let mut gd_can_history = VariantArray::new();
-            for frame in can_history.iter() {
-                let mut gd_can_frame = String::new();
+            let trace_history_lock = self.runtime.block_on(self.trace_history.lock());
+            let mut gd_can_history = String::new();
+            for frame in trace_history_lock.iter() {
+                // Push the raw CAN frame as a formatted String
+                gd_can_history.push_str(&format_can_frame(frame));
+                gd_can_history.push_str("\n");
 
-                let gd_timestamp = match frame.timestamp() {
-                    Some(ts) => ts,
-                    None => 0,
-                };
-                gd_can_frame.push_str(&format!("{:011}  ", gd_timestamp));
-
-                if frame.is_extended() {
-                    gd_can_frame.push_str(&format!("{:08X}   ", frame.id()));
-                } else {
-                    gd_can_frame.push_str(&format!("{:03X}   ", frame.id()));
+                // Push the deserialised CAN data as a String
+                if let Some(parsed_data) = self.can_parser.parse_frame_as_string(frame) {
+                    gd_can_history.push_str(&parsed_data);
                 }
-
-                gd_can_frame.push_str(&format!("[{:?}]  ", frame.dlc()));
-
-                for byte in frame.data() {
-                    gd_can_frame.push_str(&format!("{:02X} ", byte));
-                }
-
-                gd_can_history.push(&GString::from(gd_can_frame).to_variant());
             }
-            (*can_history).clear();
-            return gd_can_history;
+            return GString::from(gd_can_history);
         }
-        VariantArray::new()
+        GString::new()
     }
 }
 
@@ -294,7 +280,7 @@ async fn read_can(
     sending_queue: Arc<Mutex<VecDeque<CanFrame>>>,
     closure_requested: Arc<Mutex<bool>>,
     start_time: Arc<Mutex<Instant>>,
-    recent_can_history: Arc<Mutex<Vec<CanFrame>>>,
+    trace_history: Arc<Mutex<VecDeque<CanFrame>>>,
 ) {
     // Select a specific CAN Socket implementation for the supported operating systems
     #[cfg(target_os = "linux")]
@@ -370,9 +356,15 @@ async fn read_can(
                 let current_timestamp_us = { start_time.lock().await.elapsed().as_micros() };
 
                 // Add to the recent CAN history
-                let mut t = frame.clone();
-                t.set_timestamp(Some(current_timestamp_us.try_into().unwrap()));
-                recent_can_history.lock().await.push(t);
+                let mut frame_with_timestamp = frame.clone();
+                frame_with_timestamp.set_timestamp(Some(current_timestamp_us.try_into().unwrap()));
+
+                let mut trace_history_lock = trace_history.lock().await;
+                trace_history_lock.push_back(frame_with_timestamp);
+                const MAX_TRACE_LENGTH: usize = 100;
+                if trace_history_lock.len() > MAX_TRACE_LENGTH {
+                    trace_history_lock.pop_front();
+                }
 
                 // Check if this msg's CAN ID is in the CanEntry table
                 let mut can_entries = can_entries.lock().await;
@@ -435,7 +427,7 @@ async fn read_can(
     }
 }
 
-// Sends an error popup to the user in Godot and logs the error to the Godot standard output
+/// Sends an error popup to the user in Godot and logs the error to the Godot standard output
 fn error_alert_godot(msg: String) {
     let mut script = ResourceLoader::singleton()
         .load("res://assets/alert_handler.gd")
@@ -448,11 +440,36 @@ fn error_alert_godot(msg: String) {
     godot_error!("{:?}", msg);
 }
 
-// Returns the size in bytes of a given CanFrame when it is on the CAN bus
+/// Returns the size in bytes of a given CanFrame when it is on the CAN bus
 fn can_frame_bits(frame: &CanFrame) -> usize {
     let base = if frame.is_extended() { 67 } else { 47 }; // All non-data fields
     let data_bits = frame.dlc() * 8;
     let est_stuff = ((base + data_bits) as f32 * 0.2) as usize; // Estimate 20% bit stuffing on average
 
     base + data_bits + est_stuff
+}
+
+/// Converts a CanFrame into a String representation
+fn format_can_frame(frame: &CanFrame) -> String {
+    let mut frame_string = String::new();
+
+    let gd_timestamp = match frame.timestamp() {
+        Some(ts) => ts,
+        None => 0,
+    };
+    frame_string.push_str(&format!("{:011}  ", gd_timestamp));
+
+    if frame.is_extended() {
+        frame_string.push_str(&format!("{:08X}   ", frame.id()));
+    } else {
+        frame_string.push_str(&format!("{:03X}   ", frame.id()));
+    }
+
+    frame_string.push_str(&format!("[{:?}]  ", frame.dlc()));
+
+    for byte in frame.data() {
+        frame_string.push_str(&format!("{:02X} ", byte));
+    }
+
+    frame_string
 }
