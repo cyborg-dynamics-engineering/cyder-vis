@@ -30,8 +30,6 @@ NS_ :
     BU_BO_REL_
     SG_MUL_VAL_
 
-BS_: 1000000
-
 BU_: PC X
 
 BO_ 2147483906 SetDeviceId: 4 Vector__XXX
