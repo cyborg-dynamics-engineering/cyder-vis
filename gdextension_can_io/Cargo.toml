@@ -13,5 +13,5 @@ serde_json = "1.0.142"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
 nb = "1.1.0"
 can-dbc = "8.0.0"
-crosscan = { git = "https://github.com/Cyborg-Dynamics-Engineering/cross-can", rev = "8a2e6ba" }
+crosscan = { git = "https://github.com/Cyborg-Dynamics-Engineering/cross-can", rev = "e593d85" }
 tokio = "1.47.1"
