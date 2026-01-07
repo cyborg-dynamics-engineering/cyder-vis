@@ -181,7 +181,7 @@ impl CanParser {
                 }
             };
 
-            let formatted_value = format!("{:.15}", value)
+            let formatted_value = format!("{:.4}", value)
                 .trim_end_matches('0')
                 .trim_end_matches('.')
                 .to_string();

@@ -152,10 +152,11 @@ dependencies = [
 [[package]]
 name = "crosscan"
 version = "0.2.0"
-source = "git+https://github.com/Cyborg-Dynamics-Engineering/cross-can?rev=e593d85#e593d853a87de671ff6af160709b5fd315068592"
+source = "git+https://github.com/Cyborg-Dynamics-Engineering/cross-can?rev=8a2e6ba#8a2e6ba7e8651755fdd69b78c49ffd6fcecebccb"
 dependencies = [
  "async-trait",
  "bincode",
+ "semver",
  "serde",
  "serde_json",
  "socketcan",
@@ -727,6 +728,12 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "semver"
+version = "1.0.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
 
 [[package]]
 name = "serde"
