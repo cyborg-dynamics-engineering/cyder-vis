@@ -453,11 +453,11 @@ fn can_frame_bits(frame: &CanFrame) -> usize {
 fn format_can_frame(frame: &CanFrame) -> String {
     let mut frame_string = String::new();
 
-    let gd_timestamp = match frame.timestamp() {
-        Some(ts) => ts,
+    let us: u64 = match frame.timestamp() {
+        Some(timestamp) => timestamp,
         None => 0,
     };
-    frame_string.push_str(&format!("{:011}  ", gd_timestamp));
+    frame_string.push_str(&format!("{:04}.{}  ", us / 1_000_000, us % 1_000_000));
 
     if frame.is_extended() {
         frame_string.push_str(&format!("{:08X}   ", frame.id()));
