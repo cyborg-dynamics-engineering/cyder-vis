@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3 uid="uid://dno8ya28n0fu0"]
+[gd_scene load_steps=15 format=3 uid="uid://dno8ya28n0fu0"]
 
 [ext_resource type="Script" uid="uid://caee7k6af2fip" path="res://assets/main/set_min_window_size.gd" id="1_by4fb"]
 [ext_resource type="PackedScene" uid="uid://df463g67o2em3" path="res://assets/tables/receive_table/receive_table.tscn" id="1_ig7tw"]
@@ -10,6 +10,7 @@
 [ext_resource type="PackedScene" uid="uid://dj2at18bricod" path="res://assets/tables/transmit_table/transmit_table.tscn" id="6_67ri8"]
 [ext_resource type="Script" uid="uid://ctju5kkovohfu" path="res://assets/tables/transmit_table/add_transmit_button.gd" id="9_by4fb"]
 [ext_resource type="Script" uid="uid://c2ogvgt3fsgjo" path="res://assets/main/trace_text_edit.gd" id="10_74c7k"]
+[ext_resource type="FontFile" uid="uid://baq3tku6uokla" path="res://fonts/JetBrainsMono-Regular.ttf" id="10_b3jqf"]
 [ext_resource type="PackedScene" uid="uid://iyen1raq2l20" path="res://assets/tables/context_menu/context_menu.tscn" id="10_irre0"]
 [ext_resource type="Script" uid="uid://dnrrwnrmvjxvr" path="res://assets/alert_handler.gd" id="11_bsumw"]
 [ext_resource type="Script" uid="uid://cay8qy6p443lm" path="res://assets/status_bar.gd" id="11_in5wb"]
@@ -297,6 +298,7 @@ theme_override_constants/margin_bottom = 5
 
 [node name="TraceTextEdit" type="TextEdit" parent="Background/VSplitContainer/TabContainer/Trace/MarginContainer" node_paths=PackedStringArray("_can_bridge")]
 layout_mode = 2
+theme_override_fonts/font = ExtResource("10_b3jqf")
 editable = false
 script = ExtResource("10_74c7k")
 _can_bridge = NodePath("../../../../../../GodotCanBridge")
