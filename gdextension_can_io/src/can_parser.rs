@@ -252,78 +252,40 @@ impl CanParser {
         godot_can_entry
     }
 
-    // Extracts a u64 value from a data vector given the start bit and length. Assumes little-endian bit representation.
-    fn extract_bits_u64(
-        bytes: &[u8],
-        start_bit: usize,
-        length: usize,
-        byte_order: ByteOrder,
-    ) -> u64 {
-        assert!(bytes.len() <= 8, "Input slice must a maximum of 8 bytes");
-        assert!(length <= bytes.len() * 8, "Signal length exceeds data size");
-
-        match byte_order {
-            ByteOrder::LittleEndian => {
-                assert!(
-                    start_bit + length <= bytes.len() * 8,
-                    "Out of bounds bit extraction"
-                );
-
-                let mut bytes_buf = [0u8; 8];
-                bytes_buf[..bytes.len()].copy_from_slice(bytes);
-
-                let value = u64::from_le_bytes(bytes_buf);
-                let mask = if length == 64 {
-                    u64::MAX
-                } else {
-                    (1u64 << length) - 1
-                };
-                (value >> start_bit) & mask
-            }
-            ByteOrder::BigEndian => {
-                // DBC Motorola ("big endian") signals are not correctly handled by reversing bytes/bits.
-                // Here we interpret start_bit as the MSB position in DBC bit numbering (bit 0 = LSB of byte0),
-                // and walk toward the LSB in Motorola order:
-                //   if bit == 0 -> jump to next byte's bit 7 (pos += 15)
-                //   else        -> pos -= 1
-                //
-                // We build the integer MSB-first.
-                let total_bits = bytes.len() * 8;
-                assert!(start_bit < total_bits, "Out of bounds bit extraction");
-
-                let mut pos = start_bit;
-                let mut out: u64 = 0;
-
-                for i in 0..length {
-                    let byte_i = pos / 8;
-                    let bit_i = pos % 8;
-                    assert!(byte_i < bytes.len(), "Out of bounds bit extraction");
-
-                    let bit = (bytes[byte_i] >> bit_i) & 1;
-                    out = (out << 1) | (bit as u64);
-
-                    // Don't advance past the final extracted bit
-                    if i + 1 == length {
-                        break;
-                    }
-
-                    // Advance toward LSB in Motorola order
-                    pos = if bit_i == 0 { pos + 15 } else { pos - 1 };
-                    assert!(pos < total_bits, "Out of bounds bit extraction");
-                }
-
-                out
-            }
+    fn reverse_bit_order(bytes: &mut Vec<u8>) {
+        for byte in bytes.iter_mut() {
+            *byte = byte.reverse_bits();
         }
     }
+
+    // Extracts a u64 value from a data vector given the start bit and length. Assumes little-endian bit representation.
+    fn extract_bits_u64(bytes: Vec<u8>, start_bit: usize, length: usize) -> u64 {
+        assert!(bytes.len() <= 8, "Input slice must a maximum of 8 bytes");
+        assert!(
+            length <= (bytes.len() * 8),
+            "Signal length exceeds data size"
+        );
+        assert!(
+            start_bit + length <= (bytes.len() * 8),
+            "Out of bounds bit extraction"
+        );
+
+        let mut bytes_buf = [0u8; 8];
+        bytes_buf[..bytes.len()].copy_from_slice(&bytes[..bytes.len()]);
+
+        let value = u64::from_le_bytes(bytes_buf);
+        let mask = if length == 64 {
+            u64::MAX
+        } else {
+            (1u64 << length) - 1
+        };
+
+        (value >> start_bit) & mask
+    }
+
     // Extracts an i64 value from a data vector given the start bit and length. Assumes little-endian bit representation.
-    fn extract_bits_i64(
-        bytes: &[u8],
-        start_bit: usize,
-        length: usize,
-        byte_order: ByteOrder,
-    ) -> i64 {
-        let mut value = CanParser::extract_bits_u64(bytes, start_bit, length, byte_order) as i64;
+    fn extract_bits_i64(bytes: Vec<u8>, start_bit: usize, length: usize) -> i64 {
+        let mut value = CanParser::extract_bits_u64(bytes, start_bit, length) as i64;
 
         // Sign extend if the most significant bit of the extracted value is set (two's complement)
         if value & (1 << (length - 1)) != 0 {
