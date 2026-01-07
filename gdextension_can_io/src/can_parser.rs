@@ -90,10 +90,7 @@ impl CanParser {
                     frame_string.push_str(&signal.name.clone());
                     frame_string.push_str(" -> ");
 
-                    let mut bytes = frame.data().to_vec();
-                    if signal.byte_order == ByteOrder::BigEndian {
-                        CanParser::reverse_bit_order(&mut bytes);
-                    }
+                    let bytes = frame.data();
 
                     frame_string.push_str(&self.deserialise_signal_value(
                         message_info,
@@ -165,78 +162,7 @@ impl CanParser {
         for signal in &message_info.signals {
             godot_can_entry.push(&GString::from(signal.name.clone()).to_variant());
 
-            let dbc = match &self.dbc {
-                Some(table) => table,
-                None => {
-                    panic!("Attempted to deserialise data using DBC when no DBC table has been set")
-                }
-            };
-
-            let value = match dbc
-                .extended_value_type_for_signal(message_info.id, signal.name.as_str())
-                .unwrap_or(&can_dbc::SignalExtendedValueType::SignedOrUnsignedInteger)
-            {
-                can_dbc::SignalExtendedValueType::SignedOrUnsignedInteger => {
-                    let start_bit = usize::try_from(signal.start_bit).unwrap();
-                    let length = usize::try_from(signal.size).unwrap();
-                    match signal.value_type {
-                        can_dbc::ValueType::Signed => {
-                            CanParser::extract_bits_i64(
-                                frame.data(),
-                                start_bit,
-                                length,
-                                signal.byte_order,
-                            ) as f64
-                                * signal.factor
-                                + signal.offset
-                        }
-                        can_dbc::ValueType::Unsigned => {
-                            CanParser::extract_bits_u64(
-                                frame.data(),
-                                start_bit,
-                                length,
-                                signal.byte_order,
-                            ) as f64
-                                * signal.factor
-                                + signal.offset
-                        }
-                    }
-                }
-                can_dbc::SignalExtendedValueType::IEEEfloat32Bit => {
-                    let start_bit = usize::try_from(signal.start_bit).unwrap();
-                    let raw_value =
-                        CanParser::extract_bits_u64(frame.data(), start_bit, 32, signal.byte_order)
-                            as u32;
-
-                    f32::from_bits(raw_value) as f64 * signal.factor + signal.offset
-                }
-                can_dbc::SignalExtendedValueType::IEEEdouble64bit => {
-                    let start_bit = usize::try_from(signal.start_bit).unwrap();
-                    let raw_value =
-                        CanParser::extract_bits_u64(frame.data(), start_bit, 64, signal.byte_order);
-
-                    f64::from_bits(raw_value) * signal.factor + signal.offset
-                }
-            };
-
-            let formatted_value = format!("{:.15}", value)
-                .trim_end_matches('0')
-                .trim_end_matches('.')
-                .to_string();
-
-            // Add asterix if values falls outside bounds
-            let formatted_value_with_bounds = format!(
-                "{}{}",
-                formatted_value,
-                match value < signal.min || value > signal.max {
-                    true => "*",
-                    false => "",
-                }
-            );
-            let mut bytes = frame.data().to_vec();
-            if signal.byte_order == ByteOrder::BigEndian {
-                CanParser::reverse_bit_order(&mut bytes);
-            }
+            let bytes = frame.data();
 
             godot_can_entry.push(
                 &GString::from(self.deserialise_signal_value(message_info, signal, bytes))
@@ -251,7 +177,7 @@ impl CanParser {
         &self,
         message_info: &can_dbc::Message,
         signal: &can_dbc::Signal,
-        bytes: Vec<u8>,
+        bytes: &[u8],
     ) -> String {
         let dbc = match &self.dbc {
             Some(table) => table,
@@ -269,30 +195,36 @@ impl CanParser {
                 let length = usize::try_from(signal.size).unwrap();
                 match signal.value_type {
                     can_dbc::ValueType::Signed => {
-                        CanParser::extract_bits_i64(bytes, start_bit, length) as f64 * signal.factor
+                        CanParser::extract_bits_i64(bytes, start_bit, length, signal.byte_order)
+                            as f64
+                            * signal.factor
                             + signal.offset
                     }
                     can_dbc::ValueType::Unsigned => {
-                        CanParser::extract_bits_u64(bytes, start_bit, length) as f64 * signal.factor
+                        CanParser::extract_bits_u64(bytes, start_bit, length, signal.byte_order)
+                            as f64
+                            * signal.factor
                             + signal.offset
                     }
                 }
             }
             can_dbc::SignalExtendedValueType::IEEEfloat32Bit => {
                 let start_bit = usize::try_from(signal.start_bit).unwrap();
-                let raw_value = CanParser::extract_bits_u64(bytes, start_bit, 32) as u32;
+                let raw_value =
+                    CanParser::extract_bits_u64(bytes, start_bit, 32, signal.byte_order) as u32;
 
                 f32::from_bits(raw_value) as f64 * signal.factor + signal.offset
             }
             can_dbc::SignalExtendedValueType::IEEEdouble64bit => {
                 let start_bit = usize::try_from(signal.start_bit).unwrap();
-                let raw_value = CanParser::extract_bits_u64(bytes, start_bit, 64);
+                let raw_value =
+                    CanParser::extract_bits_u64(bytes, start_bit, 64, signal.byte_order);
 
                 f64::from_bits(raw_value) * signal.factor + signal.offset
             }
         };
 
-        let formatted_value = format!("{:?}", value)
+        let formatted_value = format!("{:.4}", value)
             .trim_end_matches('0')
             .trim_end_matches('.')
             .to_string();
