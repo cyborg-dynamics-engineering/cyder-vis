@@ -257,22 +257,27 @@ impl GodotCanBridge {
             let mut can_history = self.runtime.block_on(self.recent_can_history.lock());
             let mut gd_can_history = VariantArray::new();
             for frame in can_history.iter() {
-                let mut gd_can_frame = VariantArray::new();
+                let mut gd_can_frame = String::new();
 
                 let gd_timestamp = match frame.timestamp() {
                     Some(ts) => ts,
                     None => 0,
                 };
-                gd_can_frame.push(&GString::from(format!("{:?}", gd_timestamp)).to_variant());
-                gd_can_frame.push(&GString::from(format!("{:?}", frame.id())).to_variant());
-                gd_can_frame
-                    .push(&GString::from(format!("{:?}", frame.is_extended())).to_variant());
-                gd_can_frame.push(&GString::from(format!("{:?}", frame.dlc())).to_variant());
-                for byte in frame.data() {
-                    gd_can_frame.push(&GString::from(format!("{:?}", byte)).to_variant())
+                gd_can_frame.push_str(&format!("{:011}  ", gd_timestamp));
+
+                if frame.is_extended() {
+                    gd_can_frame.push_str(&format!("{:08X}   ", frame.id()));
+                } else {
+                    gd_can_frame.push_str(&format!("{:03X}   ", frame.id()));
                 }
 
-                gd_can_history.push(&gd_can_frame.to_variant());
+                gd_can_frame.push_str(&format!("[{:?}]  ", frame.dlc()));
+
+                for byte in frame.data() {
+                    gd_can_frame.push_str(&format!("{:02X} ", byte));
+                }
+
+                gd_can_history.push(&GString::from(gd_can_frame).to_variant());
             }
             (*can_history).clear();
             return gd_can_history;

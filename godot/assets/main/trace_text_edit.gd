@@ -8,12 +8,8 @@ var _v_scroll: VScrollBar
 var _auto_scroll := true
 var _ignore_scroll_changes := true
 
-const TIMESTAMP_IDX = 0
-const CAN_ID_IDX = 1
-const IS_EXTENDED_IDX = 2
-const LENGTH_IDX = 3
-const DATA_START_IDX = 4
 const MAX_NUMBER_OF_LINES = 100
+
 
 func _ready() -> void:
 	_v_scroll = get_v_scroll_bar()
@@ -30,8 +26,8 @@ func _on_scroll_changed(value: float) -> void:
 
 func _process(_delta: float) -> void:
 	if _can_bridge.is_alive():
-		for frame in _can_bridge.get_recent_can_msgs():
-			_append_text(_format_raw_frame(frame))
+		for frame: String in _can_bridge.get_recent_can_msgs():
+			_append_text(frame)
 
 
 func _append_text(line: String) -> void:
@@ -60,20 +56,3 @@ func _append_text(line: String) -> void:
 		_v_scroll.value = prev_scroll_value
 	
 	_ignore_scroll_changes = false
-
-
-func _format_raw_frame(frame: Array) -> String:
-	var frame_text: String = ""
-	frame_text += ("%011d  " % int(frame[TIMESTAMP_IDX]))
-
-	var is_extended: bool = (frame[IS_EXTENDED_IDX].to_lower() == "true")
-	if is_extended:
-		frame_text += ("%08x   " % int(frame[CAN_ID_IDX])).to_upper()
-	else:
-		frame_text += ("%03x   " % int(frame[CAN_ID_IDX])).to_upper()
-
-	frame_text += ("[%01d]  " % int(frame[LENGTH_IDX]))
-	for data_idx in range(DATA_START_IDX, frame.size()):
-		frame_text += ("%02x " % int(frame[data_idx])).to_upper()
-
-	return frame_text
