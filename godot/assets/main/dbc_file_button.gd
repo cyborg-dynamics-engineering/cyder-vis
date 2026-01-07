@@ -4,6 +4,7 @@ class_name DbcFileButton
 @export_category("Node References")
 @export var _can_bridge: GodotCanBridge
 @export var _dbc_file_box: LineEdit
+@export var _receive_table: ReceiveTable
 
 
 func _ready() -> void:
@@ -24,3 +25,4 @@ func _process_file(x: String) -> void:
 	var dbc_success = _can_bridge.load_dbc_file(x) # This emits an alert if bad file
 	if dbc_success:
 		_dbc_file_box.text = x
+		_receive_table.clear_all()
