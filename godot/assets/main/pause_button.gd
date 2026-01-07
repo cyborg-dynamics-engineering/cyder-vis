@@ -76,8 +76,7 @@ func _update_text() -> void:
 func _update_tab_selectability() -> void:
 	var should_disable_tabs: bool = _is_paused and _receive_table.is_empty()
 
-	const NUM_TABS: int = 3
-	for i in range(1, NUM_TABS):
+	for i in range(1, _tab_container.get_child_count()):
 		_tab_container.set_tab_disabled(i, should_disable_tabs)
 
 
