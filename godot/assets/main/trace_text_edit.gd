@@ -5,7 +5,6 @@ class_name TraceTextEdit
 @export var _can_bridge: GodotCanBridge
 
 var _v_scroll: VScrollBar
-var _ignore_scroll_changes := true
 
 
 func _ready() -> void:
@@ -18,19 +17,10 @@ func _process(_delta: float) -> void:
 
 
 func _set_text(new_text: String) -> void:
-	# Ignore the 'value_changed' scroll calls that are automatically called when updating text, we only want to redetermine _auto_scroll from the user's scrolls
-	_ignore_scroll_changes = true
-
 	var prev_scroll_value = _v_scroll.value
 
-	# Add a newline break
-	if not self.text.is_empty():
-		self.text += "\n"
-	
 	# Add the text
 	self.text = new_text
 
 	# Hold scroll position
 	_v_scroll.value = prev_scroll_value
-	
-	_ignore_scroll_changes = false
