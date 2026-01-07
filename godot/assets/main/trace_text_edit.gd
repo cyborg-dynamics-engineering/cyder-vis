@@ -61,6 +61,6 @@ func _format_raw_frame(frame: Array) -> String:
 	frame_text += ("%03x " % int(frame[CAN_ID_IDX])).to_upper()
 	frame_text += ("[%01d] " % int(frame[LENGTH_IDX]))
 	for data_idx in range(DATA_START_IDX, frame.size()):
-		frame_text += ("%02x " % int(frame[data_idx]))
+		frame_text += ("%02x " % int(frame[data_idx])).to_upper()
 
 	return frame_text
