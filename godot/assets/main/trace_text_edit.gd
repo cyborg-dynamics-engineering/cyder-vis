@@ -38,7 +38,13 @@ func _append_text(line: String) -> void:
 	_ignore_scroll_changes = true
 
 	var prev_scroll_value = _v_scroll.value
-	self.text += line + "\n"
+
+	# Add a newline break
+	if not self.text.is_empty():
+		self.text += "\n"
+	
+	# Add the text
+	self.text += line
 
 	# If we have too many lines, delete the oldest lines
 	while get_line_count() > MAX_NUMBER_OF_LINES:
