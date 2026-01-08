@@ -26,7 +26,6 @@ const IS_EXTENDED_IDX = -1
 
 const CELL_HEIGHT = 25
 const CELL_WIDTHS = [100, 80, 100, 100, 80]
-const HEADER_LABELS = ["TIMESTAMP", "FREQ [Hz]", "CAN ID", "MSG NAME", "DATA"]
 
 
 func _ready() -> void:
@@ -72,13 +71,14 @@ func render(data: Array) -> void:
 		var can_id := int(data_entry[CAN_ID_IDX])
 
 		# If a new CAN_ID, create new row
-		if not existing_can_entries.has(can_id):
-			existing_can_entries[int(data_entry[CAN_ID_IDX])] = ReceiveTableEntry.new(self, data_entry)
+		var table_entry: ReceiveTableEntry = existing_can_entries.get(can_id)
+		if table_entry == null:
+			existing_can_entries[can_id] = ReceiveTableEntry.new(self, data_entry)
 			sort_entries()
 
 		# Else, we have already discovered this CAN_ID
 		else:
-			existing_can_entries.get(can_id).update(data_entry)
+			table_entry.update(data_entry)
 
 
 # Clears all rows from the table
@@ -123,19 +123,22 @@ func timestamp_to_s(timestamp: String) -> float:
 
 # Returns the most recent timestamp from an array of incoming CAN messages
 func _get_largest_timestamp(data: Array) -> float:
-	var largest_stamp: float = 0.0
+	var largest_stamp_s: float = 0.0
 
 	for entry: Array in data:
-		if timestamp_to_s(entry[TIMESTAMP_IDX]) > largest_stamp:
-			largest_stamp = timestamp_to_s(entry[TIMESTAMP_IDX])
+		var entry_timestamp_s := timestamp_to_s(entry[TIMESTAMP_IDX])
+		if entry_timestamp_s > largest_stamp_s:
+			largest_stamp_s = entry_timestamp_s
 	
-	return largest_stamp
+	return largest_stamp_s
 
 
 # Adds the header row to the table, should only be called once
 func _generate_header_row() -> void:
 	var header_row: BoxContainer = table_row.instantiate()
 	rows.add_child(header_row)
+
+	const HEADER_LABELS = ["TIMESTAMP", "FREQ [Hz]", "CAN ID", "MSG NAME", "DATA"]
 	for i in range(len(HEADER_LABELS)):
 		var cell: PanelContainer = table_cell.instantiate()
 		cell.custom_minimum_size = Vector2(CELL_WIDTHS[i], CELL_HEIGHT)
@@ -148,24 +151,17 @@ func _generate_header_row() -> void:
 
 # Updates the text and tooltip of a label, making adjustments to size and concatonating the label if neccesary
 static func _update_label_and_font_size(label, new_text: String, width: int) -> void:
-	const PADDING_PX: int = 10
-	const MIN_FONT_SIZE: int = 10
-	const MAX_FONT_SIZE: int = 14
-
 	# Use the full text as a tooltip (mouse hover)
 	label.tooltip_text = new_text
 
-	# Adjust name's font size (and potentially truncate string) to fit within the allowed width.
+	# Truncate string if needed to fit within the allowed width.
+	const PADDING_PX: int = 10
+	const FONT_SIZE: int = 14
 	var truncated_text := new_text
-	var font_size = MAX_FONT_SIZE
-	while ThemeDB.fallback_font.get_string_size(truncated_text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size).x > (width - PADDING_PX):
-		if font_size > MIN_FONT_SIZE:
-			font_size -= 1
-		else:
+	while ThemeDB.fallback_font.get_string_size(truncated_text, HORIZONTAL_ALIGNMENT_CENTER, -1, FONT_SIZE).x > (width - PADDING_PX):
 			truncated_text = truncated_text.left(-1)
 
 	label.text = truncated_text
-	label.add_theme_font_size_override("font_size", font_size)
 
 
 # Sorts the row nodes in the table to be in order of lowest to highest CAN ID
@@ -183,7 +179,7 @@ func is_empty() -> bool:
 
 
 class ReceiveTableEntry:
-	var _last_receive_time_ms: float
+	var _last_receive_time_s: float
 	var _frequency_hz: float
 	var _can_id: int
 	var _msg_name: String
@@ -192,8 +188,10 @@ class ReceiveTableEntry:
 	var _row: Node
 	var _receive_table: ReceiveTable
 
+
 	func _init(receive_table: ReceiveTable, frame: Array) -> void:
 		_receive_table = receive_table
+		_last_receive_time_s = -1.0
 		update(frame)
 
 
@@ -240,10 +238,16 @@ class ReceiveTableEntry:
 		update_labels()
 
 
-	func update(new_frame: Array):
+	func update(new_frame: Array) -> void:
+		var new_timestamp_s = _receive_table.timestamp_to_s(new_frame[TIMESTAMP_IDX])
+
+		# Don't bother updating if we haven't received a more recent message
+		if new_timestamp_s <= _last_receive_time_s:
+			return
+
 		var prev_data_size: int = _data.size()
 
-		_last_receive_time_ms = _receive_table.timestamp_to_s(new_frame[TIMESTAMP_IDX])
+		_last_receive_time_s = new_timestamp_s
 		_frequency_hz = float(new_frame[FREQUENCY_IDX])
 		_can_id = int(new_frame[CAN_ID_IDX])
 
@@ -281,7 +285,7 @@ class ReceiveTableEntry:
 	func update_labels() -> void:
 		var entry_row_cells := _row.get_children()
 
-		ReceiveTable._update_label_and_font_size(entry_row_cells[TIMESTAMP_IDX].get_node("Label"), "%.3f" % _last_receive_time_ms, CELL_WIDTHS[TIMESTAMP_IDX])
+		ReceiveTable._update_label_and_font_size(entry_row_cells[TIMESTAMP_IDX].get_node("Label"), "%.3f" % _last_receive_time_s, CELL_WIDTHS[TIMESTAMP_IDX])
 		ReceiveTable._update_label_and_font_size(entry_row_cells[FREQUENCY_IDX].get_node("Label"), _formatted_frequency(), CELL_WIDTHS[FREQUENCY_IDX])
 		ReceiveTable._update_label_and_font_size(entry_row_cells[CAN_ID_IDX].get_node("Label"), formatted_can_id(), CELL_WIDTHS[CAN_ID_IDX])
 		ReceiveTable._update_label_and_font_size(entry_row_cells[MSG_NAME_IDX].get_node("Label"), _msg_name, CELL_WIDTHS[MSG_NAME_IDX])
@@ -303,7 +307,7 @@ class ReceiveTableEntry:
 					# If the can graph is plotting this data point, forward it to the graph
 					var label: String = _data[i - 1]
 					if _receive_table.can_graph.has_plot_element(self, label):
-						_receive_table.can_graph.add_data_point(self, label, _last_receive_time_ms, float(_data[i].trim_suffix("*")))
+						_receive_table.can_graph.add_data_point(self, label, _last_receive_time_s, float(_data[i].trim_suffix("*")))
 			else:
 				# For regular labels, update with CAN byte formatting
 				ReceiveTable._update_label_and_font_size(entry_row_cells[DATA_START_IDX + i].get_node("Label"), _format_can_data_byte(int(_data[i])), CELL_WIDTHS[DATA_START_IDX])
@@ -323,6 +327,7 @@ class ReceiveTableEntry:
 			return "0x" + ("%02x" % byte).to_upper()
 		else:
 			return "0d" + ("%03d" % byte)
+
 
 	func _formatted_frequency() -> String:
 		if _receive_table.time_format_button.format_on():
