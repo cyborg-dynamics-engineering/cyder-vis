@@ -457,7 +457,7 @@ fn format_can_frame(frame: &CanFrame) -> String {
         Some(timestamp) => timestamp,
         None => 0,
     };
-    frame_string.push_str(&format!("{:04}.{}  ", us / 1_000_000, us % 1_000_000));
+    frame_string.push_str(&format!("{:04}.{:06}  ", us / 1_000_000, us % 1_000_000));
 
     if frame.is_extended() {
         frame_string.push_str(&format!("{:08X}   ", frame.id()));
