@@ -31,9 +31,11 @@ static func display_error(msg: String) -> void:
 		return
 
 	var alert_box: AcceptDialog = AcceptDialog.new()
-	alert_box.title = ""
+	alert_box.title = "ERROR"
 	alert_box.dialog_text = msg
 	alert_box.exclusive = false
+	alert_box.set_autowrap(true)
+	alert_box.size = Vector2i(_handler_instance.get_viewport().size.x / 2, 100)
 
 	# Add to scene BEFORE querying children / get_label()
 	singleton().get_tree().current_scene.add_child(alert_box)
@@ -41,15 +43,10 @@ static func display_error(msg: String) -> void:
 	# Apply font directly to the internal Label and OK button
 	var text_label: Label = alert_box.get_label()
 	text_label.add_theme_font_override("font", mono_font)
-
-	#var ok_button: Button = alert_box.get_ok_button()
-	#ok_button.add_theme_font_override("font", mono_font)
-
 	text_label.add_theme_font_size_override("font_size", 14)
-	#ok_button.add_theme_font_size_override("font_size", 14)
 
 	# Show + position
-	alert_box.popup()  # or popup_centered()
+	alert_box.popup() # or popup_centered()
 	alert_box.position = Vector2i(
 		(_handler_instance.get_viewport().size.x - alert_box.size.x) / 2,
 		(_handler_instance.get_viewport().size.y - alert_box.size.y) - 50
