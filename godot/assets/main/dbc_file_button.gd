@@ -9,6 +9,7 @@ class_name DbcFileButton
 
 func _ready() -> void:
 	self.pressed.connect(_button_pressed)
+	_dbc_file_box.text_changed.connect(_dbc_text_changed)
 
 
 func _button_pressed() -> void:
@@ -25,4 +26,9 @@ func _process_file(x: String) -> void:
 	var dbc_success = _can_bridge.load_dbc_file(x) # This emits an alert if bad file
 	if dbc_success:
 		_dbc_file_box.text = x
-		_receive_table.clear_all()
+		_dbc_text_changed(x) # Setting the text variable doesn't trigger this signal, so trigger manually
+
+
+func _dbc_text_changed(_new_text: String):
+	# Clear the receive table as a different DBC file may require certain messages to be redrawn as deserialised/serialised versions
+	_receive_table.clear_all()
