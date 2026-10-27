@@ -26,7 +26,7 @@ func _ready() -> void:
 	_browse.text = "Recording folder…"
 	_browse.pressed.connect(_choose_directory)
 	path_row.add_child(_browse)
-	var options := HBoxContainer.new()
+	var options := HFlowContainer.new()
 	add_child(options)
 	_mode = OptionButton.new()
 	for mode in ["Raw frames", "Decoded signals", "Raw + decoded (separate files)"]:
