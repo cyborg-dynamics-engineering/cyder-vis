@@ -23,6 +23,7 @@ var _scan_running := false
 var _scan_pending := false
 var _windows := OS.get_name() == "Windows"
 var _interfaces: Array = []
+var _running_devices: Array[String] = []
 var _pending_selector := ""
 var _pending_since := 0
 
@@ -133,13 +134,15 @@ func _add_action(row: Container, label: String, action: Callable) -> void:
 
 func _process(_delta: float) -> void:
 	var adapter := _selection()
-	var already_up: bool = _running_match().get("state", "") == "up"
+	var already_up: bool = _running_match(adapter).get("state", "") == "up"
 	var pending: bool = not _pending_selector.is_empty() and _pending_selector == adapter.get("selector", "")
 	if already_up or Time.get_ticks_msec() - _pending_since > 15000:
 		_pending_selector = ""
 	var create_virtual := not _windows and _virtual.button_pressed
 	_actions[0].disabled = already_up or pending or _scan_running or (not create_virtual and not adapter.get("available", false))
 	_actions[0].tooltip_text = "The interface is already up." if already_up else ("Starting interface…" if pending else "")
+	if _actions[0].tooltip_text.is_empty() and not adapter.get("available", false):
+		_actions[0].tooltip_text = adapter.get("reason", "")
 	_adapter.disabled = _scan_running or _adapters.is_empty() or create_virtual
 	_refresh.disabled = _scan_running
 	var can_name: bool = not str(adapter.get("identity", "")).is_empty() and not _scan_running
@@ -188,17 +191,18 @@ func _accept_scan(result: Dictionary) -> void:
 		var adapter: Dictionary = _adapters[i]
 		_adapter.add_item(_adapter_label(adapter))
 		_adapter.set_item_tooltip(i + 1, adapter.label + "\n" + adapter.get("reason", ""))
-		# Busy entries remain selectable for renaming; Bring up stays disabled.
-		if adapter.get("available", false):
+		var already_running: bool = _running_match(adapter).get("state", "") == "up"
+		if adapter.get("available", false) and not already_running:
 			available_count += 1
 			only_available = i + 1
-		if not previous.is_empty() and adapter.get("identity", "") == previous:
+		if not already_running and not previous.is_empty() and adapter.get("identity", "") == previous:
 			selected_index = i + 1
 	if selected_index == 0 and previous.is_empty() and available_count == 1:
 		selected_index = only_available
 	if selected_index == 0 and not previous.is_empty():
 		_adapter.set_item_text(0, "Saved adapter unavailable — choose an adapter…")
 	_adapter.select(selected_index)
+	_update_adapter_availability()
 	_update_nickname()
 	_status.text = "Choose an adapter and start its CAN interface."
 
@@ -206,6 +210,38 @@ func _accept_scan(result: Dictionary) -> void:
 func _selection() -> Dictionary:
 	var index := _adapter.selected - 1
 	return _adapters[index] if index >= 0 and index < _adapters.size() else {}
+
+
+func set_running_interfaces(interfaces: Array) -> void:
+	var devices := _interface_devices(interfaces)
+	var changed := _running_devices != devices
+	_running_devices = devices
+	_interfaces = interfaces
+	_update_adapter_availability()
+	# Service names and configured selectors need not match our preferences.
+	# Reprobe busy hardware too, including services started with device=auto.
+	if changed and is_visible_in_tree():
+		_refresh_adapters()
+
+
+func _interface_devices(interfaces: Array) -> Array[String]:
+	var devices: Array[String] = []
+	for interface: Dictionary in interfaces:
+		devices.append(JSON.stringify([interface.get("name", ""), interface.get("driver", ""), interface.get("device", ""), interface.get("state", "")]))
+	devices.sort()
+	return devices
+
+
+func _update_adapter_availability() -> void:
+	for i in _adapters.size():
+		var adapter: Dictionary = _adapters[i]
+		var already_running: bool = _running_match(adapter).get("state", "") == "up"
+		var unavailable: bool = not adapter.get("available", false)
+		_adapter.set_item_disabled(i + 1, already_running or unavailable)
+		_adapter.set_item_tooltip(i + 1, "Already running" if already_running else adapter.label + "\n" + adapter.get("reason", ""))
+		if already_running and _adapter.selected == i + 1:
+			_adapter.select(0)
+			_update_nickname()
 
 
 func _adapter_label(adapter: Dictionary) -> String:
@@ -255,7 +291,7 @@ func _manage(create: bool) -> void:
 	if not create_virtual and (selector.is_empty() or not adapter.get("available", false) or _scan_running):
 		_show_status("ERROR: Select an available adapter first.")
 		return
-	if _running_match().get("state", "") == "up":
+	if _running_match(adapter).get("state", "") == "up":
 		return
 	_adapter_selected(_adapter.selected)
 	var identity: String = adapter.get("identity", "")
@@ -273,7 +309,7 @@ func _manage(create: bool) -> void:
 		name = "vcan%d" % index
 		selector = name
 		device_name = name
-	var existing := _running_match()
+	var existing := _running_match(adapter)
 	var error: String
 	if _windows and not existing.is_empty():
 		name = existing.name
@@ -291,12 +327,41 @@ func _manage(create: bool) -> void:
 	_show_status("Starting interface… It will appear in the running-interface list." if error.is_empty() else "ERROR: " + error)
 
 
-func _running_match() -> Dictionary:
-	var selector: String = _selection().get("selector", "")
+func _running_match(adapter: Dictionary) -> Dictionary:
+	if adapter.is_empty():
+		return {}
+	var down: Dictionary = {}
 	for interface: Dictionary in _interfaces:
-		if interface.driver == _driver_name() and interface.device == selector:
-			return interface
-	return {}
+		if str(interface.driver).to_lower() == _driver_name() and _matches_device(adapter, str(interface.device)):
+			# A stale/down service must not hide another service using this device.
+			if interface.state == "up":
+				return interface
+			down = interface
+	return down
+
+
+func _device_selector(value: String) -> String:
+	return value.strip_edges().trim_prefix("\\\\.\\").to_lower()
+
+
+func _matches_device(adapter: Dictionary, device: String) -> bool:
+	var selector := _device_selector(device)
+	if selector.is_empty() or selector == "auto":
+		return false # Busy discovery identifies the actual auto-selected adapter.
+	if selector == _device_selector(str(adapter.get("selector", ""))):
+		return true
+	var aliases: Array = adapter.get("aliases", [])
+	if not aliases.any(func(alias: String): return _device_selector(alias) == selector):
+		return false
+	# A bare serial/address can cover several USB interfaces. Do not disable
+	# unrelated channels on an ambiguous alias; their busy probes decide instead.
+	for other: Dictionary in _adapters:
+		if other == adapter:
+			continue
+		var other_aliases: Array = other.get("aliases", [other.get("selector", "")])
+		if other_aliases.any(func(alias: String): return _device_selector(alias) == selector):
+			return false
+	return true
 
 
 func _show_status(message: String) -> void:

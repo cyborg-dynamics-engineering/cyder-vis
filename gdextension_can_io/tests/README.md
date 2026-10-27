@@ -38,6 +38,12 @@ codes. Interface command planning is tested without changing the host's network
 configuration; physical adapter operations still need Windows/Linux hardware
 validation.
 
+External-interface tests check that Add interface greys running/busy adapters
+without saved names, including gsusb serial and USB-location aliases, normalized
+COM/PCAN selectors, `auto` selection, multiple USB channels and up/down changes.
+Opening the popup or changing service state refreshes availability; bus-loading
+updates alone do not trigger another hardware probe.
+
 Timestamp tests inject hardware ticks with deliberately different host/delivery
 times and verify unchanged hardware spacing, zero/missing timestamps, reordered
 samples, extended counter rollover and clock resets. A mock service exercises

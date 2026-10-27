@@ -30,7 +30,9 @@ func _ready() -> void:
 	add.pressed.connect(func():
 		setup_dialog.popup_centered(Vector2i(680, 330))
 		if setup._adapters.is_empty():
-			setup._driver_changed())
+			setup._driver_changed()
+		else:
+			setup._refresh_adapters())
 	heading.add_child(add)
 	var columns := HBoxContainer.new()
 	columns.add_theme_constant_override("separation", 12)
@@ -80,7 +82,7 @@ func _process(delta: float) -> void:
 
 
 func _update_interfaces(interfaces: Array) -> void:
-	setup._interfaces = interfaces
+	setup.set_running_interfaces(interfaces)
 	_empty.visible = interfaces.is_empty()
 	var names: Array = []
 	var connected: String = can_bridge.get_interface() if can_bridge != null else ""

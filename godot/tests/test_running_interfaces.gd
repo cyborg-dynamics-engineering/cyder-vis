@@ -45,8 +45,28 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	assert(panel.setup._actions[0].disabled)
-	assert(panel.setup._actions[0].tooltip_text == "The interface is already up.")
+	assert(panel.setup._adapter.is_item_disabled(1))
+	assert(panel.setup._adapter.get_item_tooltip(1) == "Already running")
+	assert(panel.setup._selection().is_empty()) # Do not restore a saved running adapter.
+	interfaces[0].state = "down"
+	panel._update_interfaces(interfaces)
+	assert(not panel.setup._adapter.is_item_disabled(1))
+	assert(not panel.setup._adapter.get_item_tooltip(1).contains("Already running"))
+	panel.setup._adapter.select(1)
+	assert(panel.setup._selection().selector == "SERIAL/0")
+	interfaces[0].state = "up"
+	panel._update_interfaces(interfaces)
+	assert(panel.setup._adapter.is_item_disabled(1))
+	assert(panel.setup._selection().is_empty()) # Clear a selection that starts running.
+	panel.setup._driver.select(1)
+	panel.setup._driver_changed()
+	panel.setup._accept_scan({"driver": "slcan", "adapters": [{"identity": "slcan:COM7", "selector": "COM7", "label": "COM7", "available": true}, {"identity": "slcan:COM8", "selector": "COM8", "label": "COM8", "available": true}]})
+	assert(panel.setup._adapter.is_item_disabled(1))
+	assert(panel.setup._adapter.get_item_tooltip(1) == "Already running")
+	assert(not panel.setup._adapter.is_item_disabled(2))
+	assert(panel.setup._adapter.selected == 2) # Only the unused adapter can be auto-selected.
 	panel._update_interfaces([])
+	assert(not panel.setup._adapter.is_item_disabled(1))
 	assert(panel._rows.is_empty() and panel._empty.visible)
 	DirAccess.remove_absolute(panel.setup._preferences.path)
 	scene.queue_free()

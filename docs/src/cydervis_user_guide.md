@@ -152,6 +152,13 @@ are saved to `canserver_NAME.log` in the application's user-data directory. Use
 **Connect** on a running row to connect through crosscan's versioned service
 client. Linux continues to use SocketCAN directly.
 
+The Add interface dropdown greys out adapters already running in another
+CyderVis instance or started manually with win-can-utils. Matching uses device
+selectors and hardware availability, independent of the service name or saved
+preferences. Opening the popup refreshes discovery; external service starts
+and stops also refresh it while open. Busy adapters show their reason in a
+tooltip and become available again after the other interface releases them.
+
 ## Recording CSV or MF4
 
 On the Trace tab, choose a recording folder, **Raw frames**, **Decoded signals**

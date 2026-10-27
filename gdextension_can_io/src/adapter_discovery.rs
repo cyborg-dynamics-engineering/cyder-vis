@@ -7,6 +7,8 @@ use std::thread::JoinHandle;
 pub struct Adapter {
     pub device_name: String,
     pub selector: String,
+    /// Accepted explicit device selectors, independent of a service's name.
+    pub aliases: Vec<String>,
     pub label: String,
     pub identity: String,
     pub identity_note: String,
@@ -112,6 +114,7 @@ fn discover(driver: &str) -> Result<Vec<Adapter>, String> {
                 let name = entry.file_name().to_string_lossy().into_owned();
                 Adapter {
                     device_name: name.clone(),
+                    aliases: vec![name.clone()],
                     selector: name.clone(),
                     label: name.clone(),
                     identity: format!("socketcan:{name}"),
@@ -159,6 +162,8 @@ fn parse_gsusb(output: &str) -> Result<Vec<Adapter>, String> {
         };
         adapters.push(Adapter {
             device_name: description.rsplit_once(" (serial ").map(|(name, _)| name).unwrap_or(description).to_owned(),
+            aliases: vec![selector.clone(), location.to_owned(), location.split('/').next().unwrap_or(location).to_owned()]
+                .into_iter().chain(serial.map(str::to_owned)).collect(),
             selector,
             label: format!("{description} — {location}"),
             identity,
@@ -217,6 +222,7 @@ fn serial_adapters() -> Result<Vec<Adapter>, String> {
                 _ => String::new(),
             };
             Adapter {
+                aliases: vec![port.port_name.clone()],
                 device_name: port.port_name.clone(),
                 label: if detail.is_empty() {
                     port.port_name.clone()
@@ -304,6 +310,7 @@ mod pcan {
                 &guid,
             );
             adapters.push(Adapter {
+                aliases: vec![selector.clone()],
                 device_name: text(&channel.name),
                 selector: selector.clone(),
                 label: format!(
@@ -395,6 +402,9 @@ mod tests {
     fn gsusb_uses_serial_and_interface_instead_of_usb_location() {
         let a = parse_gsusb("Connected gs_usb adapters:\n  1) 003:062/0  CANable (serial ABC)  [Available]\n  2) 003:063/1  CANable (serial DEF)  [Available]\n").unwrap();
         assert_eq!(a[0].selector, "ABC/0");
+        assert!(a[0].aliases.contains(&"ABC".into()));
+        assert!(a[0].aliases.contains(&"003:062/0".into()));
+        assert!(a[0].aliases.contains(&"003:062".into()));
         assert_eq!(a[1].identity, "gsusb:DEF/1");
         let b = parse_gsusb(
             "Connected gs_usb adapters:\n  1) 001:002/0  CANable (serial ABC)  [Available]\n",
@@ -405,6 +415,7 @@ mod tests {
         assert!(!busy[0].available);
         assert!(busy[0].identity.is_empty());
         assert_eq!(busy[0].selector, "001:002/0");
+        assert!(busy[0].aliases.contains(&"001:002".into()));
     }
     #[test]
     fn rejects_unknown_output_and_duplicate_serials() {
