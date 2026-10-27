@@ -53,6 +53,30 @@ cargo build
 - Download the latest [Godot Editor](https://godotengine.org/)
 - Open the project in the Godot editor. The project file can be found under `godot/project.godot`. Press `F5` or click the play button on the top right to run the project.
 
+### Running with just
+
+With Rust, Godot 4.5 or later, and [just](https://github.com/casey/just) installed, run from the repository root:
+
+```bash
+just run
+```
+
+This builds the CAN IO GDExtension, imports the Godot project resources, and launches CyderVis. Running `just` without a recipe does the same thing. Use `just editor` to build the extension and open the Godot editor, or `just build` to build only the extension.
+
+The recipes use `godot` from your `PATH` by default. If your executable has a different name or location, override it with the `godot` variable:
+
+```bash
+just godot=godot4 run
+```
+
+On Windows, a full executable path can include spaces:
+
+```powershell
+just 'godot=C:\Program Files\Godot\Godot_v4.5-stable_win64.exe' run
+```
+
+You can also set the `GODOT_BIN` environment variable to the executable path. The existing Git LFS setup step is required before the first run.
+
 at your option.
 
 ### Contribution

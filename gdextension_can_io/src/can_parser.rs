@@ -8,7 +8,7 @@ use crate::{CanEntry, CanId};
 use can_dbc::{ByteOrder, Dbc, DbcError};
 use core::panic;
 use crosscan::can::CanFrame;
-use godot::builtin::{GString, VariantArray};
+use godot::builtin::{GString, VarArray};
 use godot::prelude::*;
 use std::collections::HashMap;
 
@@ -37,11 +37,46 @@ mod dbc_helpers {
     }
 }
 
+#[derive(Clone)]
 pub struct CanParser {
     dbc: Option<Dbc>,
 }
 
 impl CanParser {
+    pub fn dbc(&self) -> Option<&Dbc> {
+        self.dbc.as_ref()
+    }
+
+    pub fn decode_for_recording(
+        &self,
+        frame: &CanFrame,
+    ) -> Option<(String, Vec<crate::recording::DecodedSignal>)> {
+        if frame.is_rtr() || frame.is_error() {
+            return None;
+        }
+        let dbc = self.dbc.as_ref()?;
+        let message = dbc
+            .messages
+            .iter()
+            .find(|message| message.id == dbc_helpers::get_message_id(frame))?;
+        let mut signals = Vec::new();
+        for signal in &message.signals {
+            if !self.signal_fits(message, signal, frame.data()) {
+                return None;
+            }
+            let value = self.signal_value(message, signal, frame.data());
+            if !value.is_finite() {
+                return None;
+            }
+            signals.push(crate::recording::DecodedSignal {
+                name: signal.name.clone(),
+                value,
+                unit: signal.unit.clone(),
+            });
+        }
+        Some((message.name.clone(), signals))
+    }
+
     pub fn new() -> Self {
         return Self { dbc: None };
     }
@@ -65,7 +100,7 @@ impl CanParser {
 
     /// Parses a set of CanDataFrames into a table of Godot CAN entries. Will optionally use a DBC for deserialisation if provided.
     pub fn parse_can_table(&self, can_entries: &HashMap<CanId, CanEntry>) -> Array<Variant> {
-        let mut godot_can_table = VariantArray::new();
+        let mut godot_can_table = VarArray::new();
 
         for (_, entry) in can_entries.iter() {
             let godot_can_entry = &self.parse_can_entry(entry).to_variant();
@@ -112,12 +147,12 @@ impl CanParser {
 
     /// Parses a given CanEntry into a Godot CAN entry. Will optionally use a DBC for deserialisation if provided.
     fn parse_can_entry(&self, can_entry: &CanEntry) -> Array<Variant> {
-        let mut godot_can_entry = VariantArray::new();
+        let mut godot_can_entry = VarArray::new();
 
         godot_can_entry
-            .push(&GString::from(format!("{:?}", can_entry.timestamps.back())).to_variant());
-        godot_can_entry.push(&GString::from(format!("{:?}", can_entry.freq_hz)).to_variant());
-        godot_can_entry.push(&GString::from(format!("{:?}", can_entry.frame.id())).to_variant());
+            .push(&GString::from(&format!("{:?}", can_entry.timestamps.back())).to_variant());
+        godot_can_entry.push(&GString::from(&format!("{:?}", can_entry.freq_hz)).to_variant());
+        godot_can_entry.push(&GString::from(&format!("{:?}", can_entry.frame.id())).to_variant());
 
         // Query if a dbc entry exists for this id
         if let Some(dbc) = &self.dbc {
@@ -125,7 +160,7 @@ impl CanParser {
 
             // if dbc attempt to deserialize
             if let Some(message_info) = dbc.messages.iter().find(|m| m.id == query_id) {
-                godot_can_entry.push(&GString::from(message_info.name.clone()).to_variant());
+                godot_can_entry.push(&GString::from(&message_info.name).to_variant());
 
                 // TODO: Check if can deserialize
                 godot_can_entry = self.deserialise_dbc_data(
@@ -147,7 +182,7 @@ impl CanParser {
 
         // The last element indicates to Godot whether the frame is Extended
         godot_can_entry
-            .push(&GString::from(format!("{:?}", can_entry.frame.is_extended())).to_variant());
+            .push(&GString::from(&format!("{:?}", can_entry.frame.is_extended())).to_variant());
 
         godot_can_entry
     }
@@ -160,12 +195,12 @@ impl CanParser {
         message_info: &can_dbc::Message,
     ) -> Array<Variant> {
         for signal in &message_info.signals {
-            godot_can_entry.push(&GString::from(signal.name.clone()).to_variant());
+            godot_can_entry.push(&GString::from(&signal.name).to_variant());
 
             let bytes = frame.data();
 
             godot_can_entry.push(
-                &GString::from(self.deserialise_signal_value(message_info, signal, bytes))
+                &GString::from(&self.deserialise_signal_value(message_info, signal, bytes))
                     .to_variant(),
             );
         }
@@ -179,6 +214,51 @@ impl CanParser {
         signal: &can_dbc::Signal,
         bytes: &[u8],
     ) -> String {
+        if !self.signal_fits(message_info, signal, bytes) {
+            return "N/A".into();
+        }
+        let value = self.signal_value(message_info, signal, bytes);
+
+        let formatted_value = format!("{:.4}", value)
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string();
+
+        // Add asterix if values falls outside bounds
+        let formatted_value_with_bounds = format!(
+            "{}{}",
+            formatted_value,
+            match value < signal.min || value > signal.max {
+                true => "*",
+                false => "",
+            }
+        );
+        formatted_value_with_bounds
+    }
+
+    fn signal_fits(
+        &self,
+        message: &can_dbc::Message,
+        signal: &can_dbc::Signal,
+        bytes: &[u8],
+    ) -> bool {
+        let Some(dbc) = &self.dbc else {
+            return false;
+        };
+        let size = match dbc.extended_value_type_for_signal(message.id, &signal.name) {
+            Some(can_dbc::SignalExtendedValueType::IEEEfloat32Bit) => 32,
+            Some(can_dbc::SignalExtendedValueType::IEEEdouble64bit) => 64,
+            _ => signal.size,
+        };
+        size == signal.size && crate::dbc_transmit::bit_positions(signal, bytes.len()).is_ok()
+    }
+
+    fn signal_value(
+        &self,
+        message_info: &can_dbc::Message,
+        signal: &can_dbc::Signal,
+        bytes: &[u8],
+    ) -> f64 {
         let dbc = match &self.dbc {
             Some(table) => table,
             None => {
@@ -186,7 +266,7 @@ impl CanParser {
             }
         };
 
-        let value = match dbc
+        match dbc
             .extended_value_type_for_signal(message_info.id, signal.name.as_str())
             .unwrap_or(&can_dbc::SignalExtendedValueType::SignedOrUnsignedInteger)
         {
@@ -222,23 +302,7 @@ impl CanParser {
 
                 f64::from_bits(raw_value) * signal.factor + signal.offset
             }
-        };
-
-        let formatted_value = format!("{:.4}", value)
-            .trim_end_matches('0')
-            .trim_end_matches('.')
-            .to_string();
-
-        // Add asterix if values falls outside bounds
-        let formatted_value_with_bounds = format!(
-            "{}{}",
-            formatted_value,
-            match value < signal.min || value > signal.max {
-                true => "*",
-                false => "",
-            }
-        );
-        formatted_value_with_bounds
+        }
     }
 
     /// Deserialises and appends the raw byte data from the CAN frame to the Godot CAN entry
@@ -247,7 +311,7 @@ impl CanParser {
         frame: CanFrame,
     ) -> Array<Variant> {
         for byte in frame.data() {
-            godot_can_entry.push(&GString::from(format!("{:?}", byte)).to_variant())
+            godot_can_entry.push(&GString::from(&format!("{:?}", byte)).to_variant())
         }
         godot_can_entry
     }
@@ -326,7 +390,7 @@ impl CanParser {
         let mut value = CanParser::extract_bits_u64(bytes, start_bit, length, byte_order) as i64;
 
         // Sign extend if the most significant bit of the extracted value is set (two's complement)
-        if value & (1 << (length - 1)) != 0 {
+        if length < 64 && value & (1 << (length - 1)) != 0 {
             value = value | (!0 << length);
         }
 

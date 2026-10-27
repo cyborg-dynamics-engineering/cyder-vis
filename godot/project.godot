@@ -28,6 +28,7 @@ enabled=PackedStringArray("res://addons/graph_2d/plugin.cfg")
 
 [gui]
 
+theme/custom="res://assets/main/main_theme.tres"
 timers/tooltip_delay_sec=0.2
 
 [importer_defaults]

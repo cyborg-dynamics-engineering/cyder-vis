@@ -1,6 +1,17 @@
+mod adapter_discovery;
 mod can_parser;
+mod dbc_transmit;
+mod interface_manager;
+mod interface_registry;
+mod recording;
+#[cfg(windows)]
+mod service_can;
+mod system_tools;
+mod timestamps;
+mod trace_filter;
 
 use crate::can_parser::CanParser;
+use crate::trace_filter::TraceFilter;
 use crosscan::CanInterface;
 use crosscan::can::CanFrame;
 use godot::classes::{Node, ResourceLoader, Script};
@@ -9,7 +20,7 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
 
@@ -45,6 +56,13 @@ struct GodotCanBridge {
     start_time: Arc<Mutex<Instant>>,
     /// Holds the recent can frames with timestamps for trace
     trace_history: Arc<Mutex<VecDeque<CanFrame>>>,
+    trace_filter: Arc<Mutex<TraceFilter>>,
+    interface_manager: interface_manager::InterfaceManager,
+    adapter_discovery: adapter_discovery::AdapterDiscovery,
+    interface_registry: interface_registry::InterfaceRegistry,
+    recorder: Arc<Mutex<Option<recording::Recorder>>>,
+    timeline: timestamps::Timeline,
+    hardware_timestamp_status: Arc<Mutex<i32>>,
 
     /// Base Godot class (Rust module will be implemented as a Node in Godot)
     base: Base<Node>,
@@ -77,6 +95,19 @@ impl INode for GodotCanBridge {
             runtime: Runtime::new().unwrap(),
             start_time: Arc::new(Mutex::new(Instant::now())),
             trace_history: Arc::new(Mutex::new(VecDeque::new())),
+            trace_filter: Arc::new(Mutex::new(TraceFilter::default())),
+            interface_manager: interface_manager::InterfaceManager::default(),
+            adapter_discovery: adapter_discovery::AdapterDiscovery::default(),
+            interface_registry: interface_registry::InterfaceRegistry::default(),
+            recorder: Arc::new(Mutex::new(None)),
+            timeline: timestamps::Timeline::new(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+                    .min(u64::MAX as u128) as u64,
+            ),
+            hardware_timestamp_status: Arc::new(Mutex::new(0)),
             base,
         }
     }
@@ -84,6 +115,224 @@ impl INode for GodotCanBridge {
 
 #[godot_api]
 impl GodotCanBridge {
+    /// Origin selection changes display/output only, never the receive clock.
+    #[func]
+    fn set_timestamp_epoch(&mut self, mode: i32) -> String {
+        if self.is_recording() {
+            return "Stop recording before changing the time origin.".into();
+        }
+        match timestamps::Epoch::try_from(mode) {
+            Ok(epoch) => {
+                self.timeline.epoch = epoch;
+                String::new()
+            }
+            Err(error) => error.into(),
+        }
+    }
+
+    #[func]
+    fn get_timestamp_epoch(&self) -> i32 {
+        self.timeline.epoch as i32
+    }
+
+    /// Only verified transceiver capabilities are eligible for a visible badge.
+    #[func]
+    fn get_hardware_timestamp_status(&mut self) -> i32 {
+        if self.is_alive() {
+            *self.runtime.block_on(self.hardware_timestamp_status.lock())
+        } else {
+            0
+        }
+    }
+
+    #[func]
+    fn start_recording(&mut self, directory: String, mode: i32, format: String) -> String {
+        if !self.is_alive() {
+            return "Connect to a CAN interface before starting a recording.".into();
+        }
+        let mut recorder = self.runtime.block_on(self.recorder.lock());
+        if recorder.is_some() {
+            return "A recording is already running.".into();
+        }
+        // Commit the new recording origin only after the files open successfully.
+        let mut timeline = self.timeline;
+        timeline.start_recording(
+            self.runtime
+                .block_on(self.start_time.lock())
+                .elapsed()
+                .as_micros()
+                .min(u64::MAX as u128) as u64,
+        );
+        match recording::Recorder::start(
+            std::path::Path::new(&directory),
+            mode,
+            &format,
+            self.can_parser.clone(),
+            timeline.origin(),
+        ) {
+            Ok(value) => {
+                *recorder = Some(value);
+                self.timeline = timeline;
+                String::new()
+            }
+            Err(error) => error,
+        }
+    }
+
+    #[func]
+    fn stop_recording(&mut self) -> String {
+        if let Some(mut recorder) = self.runtime.block_on(self.recorder.lock()).take() {
+            return recorder.finish().err().unwrap_or_default();
+        }
+        String::new()
+    }
+
+    #[func]
+    fn is_recording(&self) -> bool {
+        self.runtime.block_on(self.recorder.lock()).is_some()
+    }
+
+    #[func]
+    fn recording_files(&self) -> String {
+        self.runtime
+            .block_on(self.recorder.lock())
+            .as_ref()
+            .map(|recorder| {
+                recorder
+                    .paths
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default()
+    }
+
+    #[func]
+    fn dbc_transmit_definitions(&self) -> String {
+        self.can_parser
+            .dbc()
+            .map(|dbc| serde_json::to_string(&dbc_transmit::definitions(dbc)).unwrap())
+            .unwrap_or_else(|| "[]".into())
+    }
+
+    #[func]
+    fn encode_dbc_frame(&self, id: u32, extended: bool, inputs_json: String) -> String {
+        let result = (|| {
+            let dbc = self.can_parser.dbc().ok_or("Load a DBC file first")?;
+            let inputs: Vec<String> =
+                serde_json::from_str(&inputs_json).map_err(|e| e.to_string())?;
+            dbc_transmit::encode(dbc, id, extended, &inputs)
+        })();
+        match result {
+            Ok(data) => serde_json::json!({"data": data}).to_string(),
+            Err(error) => serde_json::json!({"error": error}).to_string(),
+        }
+    }
+
+    #[func]
+    fn check_dependencies(&self) -> String {
+        system_tools::can_utils_warning()
+    }
+
+    #[func]
+    fn scan_adapters(&mut self, driver: String) -> String {
+        self.adapter_discovery
+            .start(driver)
+            .err()
+            .unwrap_or_default()
+    }
+
+    #[func]
+    fn poll_adapter_scan(&mut self) -> String {
+        self.adapter_discovery.poll()
+    }
+
+    #[func]
+    fn running_interfaces(&mut self) -> String {
+        serde_json::to_string(&self.interface_registry.snapshot(&self.runtime)).unwrap()
+    }
+
+    #[func]
+    fn interface_service_name(&mut self, display_name: String, identity: String) -> String {
+        let mut occupied = self
+            .interface_registry
+            .snapshot(&self.runtime)
+            .into_iter()
+            .map(|interface| interface.name)
+            .collect::<Vec<_>>();
+        occupied.extend(self.interface_manager.owned_names());
+        interface_registry::service_name(&display_name, &identity, &occupied)
+    }
+
+    #[func]
+    fn stop_interface(&mut self, name: String) -> String {
+        if self.is_alive() && self.interface == name {
+            self.close_bus();
+        }
+        self.interface_manager
+            .stop_named(&name)
+            .err()
+            .unwrap_or_default()
+    }
+
+    #[func]
+    fn resume_interface(&mut self, name: String, bitrate: u32) -> String {
+        #[cfg(windows)]
+        {
+            self.interface_manager
+                .set_up(&name, true, Some(bitrate))
+                .err()
+                .unwrap_or_default()
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (name, bitrate);
+            "Use Start to bring this interface up.".into()
+        }
+    }
+
+    #[func]
+    fn manage_interface(
+        &mut self,
+        interface: String,
+        bitrate: u32,
+        virtual_bus: bool,
+        create: bool,
+        driver: String,
+        channel: String,
+        log: String,
+    ) -> String {
+        self.interface_manager
+            .start(
+                &interface,
+                bitrate,
+                virtual_bus,
+                create,
+                &driver,
+                &channel,
+                &log,
+            )
+            .err()
+            .unwrap_or_default()
+    }
+
+    #[func]
+    fn interface_operation_status(&mut self) -> String {
+        self.interface_manager.poll()
+    }
+
+    #[func]
+    fn stop_managed_server(&mut self) -> String {
+        if self.is_alive() {
+            return "Pause the CAN connection before stopping its server.".into();
+        }
+        self.interface_manager
+            .stop_server()
+            .err()
+            .unwrap_or_default()
+    }
+
     #[func]
     fn load_dbc_file(&mut self, dbc_filepath: String) -> bool {
         // Empty filepath, assume user does not have a DBC file
@@ -117,6 +366,23 @@ impl GodotCanBridge {
 
     #[func]
     fn configure_bus(&mut self, interface_name: String) -> bool {
+        if self.is_alive() {
+            return false;
+        }
+        if let Some(handle) = self.read_handle.take() {
+            let _ = self.runtime.block_on(handle);
+        }
+        *self.runtime.block_on(self.closure_requested.lock()) = false;
+        self.runtime.block_on(self.sending_queue.lock()).clear();
+        if self.interface != interface_name {
+            self.runtime.block_on(self.can_entries.lock()).clear();
+            self.runtime.block_on(self.trace_history.lock()).clear();
+        }
+        let warning = self.check_dependencies();
+        if !warning.is_empty() {
+            error_alert_godot(warning);
+            return false;
+        }
         // Check if multithreading is functional in this godot-rust version
         if let Err(err) = std::thread::spawn(|| {
             godot_print!("RUST threading successful");
@@ -144,6 +410,10 @@ impl GodotCanBridge {
         let closure_requested = Arc::clone(&self.closure_requested);
         let start_time = Arc::clone(&self.start_time);
         let trace_history = Arc::clone(&self.trace_history);
+        let trace_filter = Arc::clone(&self.trace_filter);
+        let recorder = Arc::clone(&self.recorder);
+        let hardware_timestamp_status = Arc::clone(&self.hardware_timestamp_status);
+        *self.runtime.block_on(hardware_timestamp_status.lock()) = 0;
         self.read_handle = Some(tokio::spawn(async {
             read_can(
                 interface_name,
@@ -154,6 +424,9 @@ impl GodotCanBridge {
                 closure_requested,
                 start_time,
                 trace_history,
+                trace_filter,
+                recorder,
+                hardware_timestamp_status,
             )
             .await;
         }));
@@ -163,7 +436,7 @@ impl GodotCanBridge {
     }
 
     #[func]
-    fn get_can_table(&mut self) -> VariantArray {
+    fn get_can_table(&mut self) -> VarArray {
         self.can_parser
             .parse_can_table(&self.runtime.block_on(self.can_entries.lock()))
     }
@@ -181,9 +454,12 @@ impl GodotCanBridge {
     }
 
     #[func]
-    fn send_can_frame(&mut self, can_id_value: u32, is_extended: bool, data: VariantArray) {
+    fn send_can_frame(&mut self, can_id_value: u32, is_extended: bool, data: VarArray) {
         // Convert from Godot Variant to typed u8 vector
-        let packed_bytes = PackedByteArray::from(&data);
+        let packed_bytes = data
+            .to_variant()
+            .try_to_relaxed::<PackedByteArray>()
+            .expect("CAN frame data must be convertible to bytes");
         let byte_slice_data: &[u8] = packed_bytes.as_slice();
 
         // Create a CAN data frame with the ID and some data (up to 8 bytes for a standard CAN frame)
@@ -210,6 +486,10 @@ impl GodotCanBridge {
             godot_print!("CAN bus closed");
         } else {
             error_alert_godot("Attempted to close a nonexistent CAN connection".to_string());
+        }
+        let error = self.stop_recording();
+        if !error.is_empty() {
+            error_alert_godot(format!("Recording finalization failed: {error}"));
         }
     }
 
@@ -252,13 +532,28 @@ impl GodotCanBridge {
     }
 
     #[func]
+    fn set_trace_filter(&mut self, input: String) -> String {
+        match TraceFilter::parse(&input) {
+            Ok(filter) => {
+                *self.runtime.block_on(self.trace_filter.lock()) = filter;
+                String::new()
+            }
+            Err(error) => error,
+        }
+    }
+
+    #[func]
     fn get_recent_can_msgs(&mut self) -> GString {
-        if self.is_alive() {
+        {
             let trace_history_lock = self.runtime.block_on(self.trace_history.lock());
+            let filter = self.runtime.block_on(self.trace_filter.lock());
             let mut gd_can_history = String::new();
             for frame in trace_history_lock.iter() {
+                if !filter.matches(frame, &self.interface) {
+                    continue;
+                }
                 // Push the raw CAN frame as a formatted String
-                gd_can_history.push_str(&format_can_frame(frame));
+                gd_can_history.push_str(&format_can_frame(frame, self.timeline.origin()));
                 gd_can_history.push_str("\n");
 
                 // Push the deserialised CAN data as a String
@@ -266,9 +561,8 @@ impl GodotCanBridge {
                     gd_can_history.push_str(&parsed_data);
                 }
             }
-            return GString::from(gd_can_history);
+            return GString::from(&gd_can_history);
         }
-        GString::new()
     }
 }
 
@@ -281,13 +575,16 @@ async fn read_can(
     closure_requested: Arc<Mutex<bool>>,
     start_time: Arc<Mutex<Instant>>,
     trace_history: Arc<Mutex<VecDeque<CanFrame>>>,
+    trace_filter: Arc<Mutex<TraceFilter>>,
+    recorder: Arc<Mutex<Option<recording::Recorder>>>,
+    hardware_timestamp_status: Arc<Mutex<i32>>,
 ) {
     // Select a specific CAN Socket implementation for the supported operating systems
     #[cfg(target_os = "linux")]
     use crosscan::lin_can::LinuxCan as CanSocket;
 
     #[cfg(target_os = "windows")]
-    use crosscan::win_can::WindowsCan as CanSocket;
+    use crate::service_can::ServiceCan as CanSocket;
 
     // Open async CAN socket
     let mut socket = match CanSocket::open(&interface_name).await {
@@ -297,6 +594,7 @@ async fn read_can(
                 "Failed to open CAN device, check that {interface_name:?} is up"
             ));
             godot_error!("{err:?}");
+            finish_recording(&recorder).await;
             return;
         }
     };
@@ -311,7 +609,21 @@ async fn read_can(
         }
     };
 
+    #[cfg(target_os = "windows")]
+    {
+        *hardware_timestamp_status.lock().await = socket.hardware_timestamp_status();
+    }
+    let mut receive_clock = timestamps::Clock::default();
     loop {
+        {
+            let mut recording = recorder.lock().await;
+            if let Some(active) = recording.as_mut() {
+                if let Err(error) = active.flush_if_due() {
+                    recording.take();
+                    error_alert_godot(format!("Recording stopped: {error}"));
+                }
+            }
+        }
         // Process outgoing CAN messages
         {
             let mut frames_to_send = sending_queue.lock().await;
@@ -350,14 +662,36 @@ async fn read_can(
 
         // Process the incoming CanFrame
         match res {
-            Ok(frame) => {
+            Ok(mut frame) => {
+                #[cfg(target_os = "windows")]
+                {
+                    *hardware_timestamp_status.lock().await = socket.hardware_timestamp_status();
+                }
                 *bit_counter.lock().await += can_frame_bits(&frame);
 
-                let current_timestamp_us = { start_time.lock().await.elapsed().as_micros() };
+                let host_timestamp_us =
+                    u64::try_from(start_time.lock().await.elapsed().as_micros())
+                        .unwrap_or(u64::MAX);
+                let current_timestamp_us =
+                    receive_clock.timestamp(frame.timestamp(), host_timestamp_us);
+                frame.set_timestamp(Some(current_timestamp_us));
+                let current_timestamp_us = u128::from(current_timestamp_us);
 
                 // Add to the recent CAN history
-                let mut frame_with_timestamp = frame.clone();
-                frame_with_timestamp.set_timestamp(Some(current_timestamp_us.try_into().unwrap()));
+                let frame_with_timestamp = frame.clone();
+
+                {
+                    let filter = trace_filter.lock().await.clone();
+                    let mut recording = recorder.lock().await;
+                    if let Some(active) = recording.as_mut() {
+                        if let Err(error) =
+                            active.record(&frame_with_timestamp, &interface_name, &filter)
+                        {
+                            recording.take();
+                            error_alert_godot(format!("Recording stopped: {error}"));
+                        }
+                    }
+                }
 
                 let mut trace_history_lock = trace_history.lock().await;
                 trace_history_lock.push_back(frame_with_timestamp);
@@ -371,6 +705,16 @@ async fn read_can(
                 match can_entries.entry(frame.id()) {
                     Entry::Occupied(mut occupied_entry) => {
                         let can_entry = occupied_entry.get_mut();
+
+                        // Keep hardware event times in the trace/recording, but
+                        // do not feed reordered samples into interval arithmetic.
+                        if can_entry
+                            .timestamps
+                            .back()
+                            .is_some_and(|&previous| current_timestamp_us < previous)
+                        {
+                            continue;
+                        }
 
                         // push new timestamp
                         can_entry.timestamps.push_back(current_timestamp_us);
@@ -425,6 +769,16 @@ async fn read_can(
             }
         }
     }
+    *hardware_timestamp_status.lock().await = 0;
+    finish_recording(&recorder).await;
+}
+
+async fn finish_recording(recorder: &Mutex<Option<recording::Recorder>>) {
+    if let Some(mut active) = recorder.lock().await.take() {
+        if let Err(error) = active.finish() {
+            error_alert_godot(format!("Recording finalization failed: {error}"));
+        }
+    }
 }
 
 /// Sends an error popup to the user in Godot and logs the error to the Godot standard output
@@ -450,14 +804,15 @@ fn can_frame_bits(frame: &CanFrame) -> usize {
 }
 
 /// Converts a CanFrame into a String representation
-fn format_can_frame(frame: &CanFrame) -> String {
+fn format_can_frame(frame: &CanFrame, origin: timestamps::Origin) -> String {
     let mut frame_string = String::new();
 
     let us: u64 = match frame.timestamp() {
         Some(timestamp) => timestamp,
         None => 0,
     };
-    frame_string.push_str(&format!("{:04}.{:06}  ", us / 1_000_000, us % 1_000_000));
+    frame_string.push_str(&timestamps::format_seconds(origin.timestamp_us(us)));
+    frame_string.push_str("  ");
 
     if frame.is_extended() {
         frame_string.push_str(&format!("{:08X}   ", frame.id()));

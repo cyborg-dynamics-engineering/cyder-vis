@@ -1,7 +1,64 @@
-[gd_resource type="Theme" load_steps=5 format=3 uid="uid://b6yn6fpahycts"]
+[gd_resource type="Theme" load_steps=8 format=3 uid="uid://b6yn6fpahycts"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3xm2k"]
+content_margin_left = 10.0
+content_margin_top = 4.0
+content_margin_right = 10.0
+content_margin_bottom = 4.0
 bg_color = Color(0.156863, 0.156863, 0.156863, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.29, 0.29, 0.29, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_button_hover"]
+content_margin_left = 10.0
+content_margin_top = 4.0
+content_margin_right = 10.0
+content_margin_bottom = 4.0
+bg_color = Color(0.215902, 0.215902, 0.215902, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.38, 0.38, 0.38, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_button_pressed"]
+content_margin_left = 10.0
+content_margin_top = 4.0
+content_margin_right = 10.0
+content_margin_bottom = 4.0
+bg_color = Color(0.13, 0.13, 0.13, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.32, 0.32, 0.32, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_button_disabled"]
+content_margin_left = 10.0
+content_margin_top = 4.0
+content_margin_right = 10.0
+content_margin_bottom = 4.0
+bg_color = Color(0.156863, 0.156863, 0.156863, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.23, 0.23, 0.23, 1)
 corner_radius_top_left = 5
 corner_radius_top_right = 5
 corner_radius_bottom_right = 5
@@ -35,7 +92,16 @@ expand_margin_right = 3.0
 expand_margin_bottom = 3.0
 
 [resource]
+Button/styles/disabled = SubResource("StyleBoxFlat_button_disabled")
+Button/styles/hover = SubResource("StyleBoxFlat_button_hover")
+Button/styles/hover_pressed = SubResource("StyleBoxFlat_button_pressed")
 Button/styles/normal = SubResource("StyleBoxFlat_3xm2k")
+Button/styles/pressed = SubResource("StyleBoxFlat_button_pressed")
+OptionButton/styles/disabled = SubResource("StyleBoxFlat_button_disabled")
+OptionButton/styles/hover = SubResource("StyleBoxFlat_button_hover")
+OptionButton/styles/hover_pressed = SubResource("StyleBoxFlat_button_pressed")
+OptionButton/styles/normal = SubResource("StyleBoxFlat_3xm2k")
+OptionButton/styles/pressed = SubResource("StyleBoxFlat_button_pressed")
 PanelContainer/styles/panel = SubResource("StyleBoxFlat_hlxam")
 TabContainer/styles/panel = SubResource("StyleBoxFlat_0ea4y")
 Window/styles/embedded_border = SubResource("StyleBoxFlat_p2r8c")

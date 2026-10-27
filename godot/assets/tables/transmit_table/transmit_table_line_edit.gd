@@ -7,10 +7,17 @@ var _send_text_cell: Control
 
 
 func _ready() -> void:
-	# TransmitTable -> Rows -> TableRow -> SendTextCell -> TransmitTableLineEdit
 	_send_text_cell = get_parent()
-	_row = _send_text_cell.get_parent()
-	_transmit_table = _row.get_parent().get_parent()
+	var ancestor: Node = get_parent()
+	while ancestor != null and not ancestor is TransmitTable:
+		ancestor = ancestor.get_parent()
+	_transmit_table = ancestor
+	_row = _send_text_cell
+	while _row.get_parent() != _transmit_table.rows:
+		_row = _row.get_parent()
+	var column: Control = _send_text_cell
+	while column.get_parent() != _row:
+		column = column.get_parent()
 
 	# Add movement up and down the transmit table rows using the Enter and Enter + Shift keys
 	text_submitted.connect(
@@ -31,7 +38,10 @@ func _ready() -> void:
 			# Change focus to this row
 			var next_row = _transmit_table.rows.get_child(next_index)
 			if next_row:
-				next_row.get_child(_send_text_cell.get_index()).get_node("LineEdit").grab_focus()
+				for field: LineEdit in next_row.get_child(column.get_index()).find_children("*", "LineEdit", true, false):
+					if field.editable and field.is_visible_in_tree():
+						field.grab_focus()
+						break
 	)
 
 	# Select all text when entering editing mode
