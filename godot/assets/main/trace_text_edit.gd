@@ -12,10 +12,10 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	_set_text(_can_bridge.get_recent_can_msgs())
+	_update_trace_text(_can_bridge.get_recent_can_msgs())
 
 
-func _set_text(new_text: String) -> void:
+func _update_trace_text(new_text: String) -> void:
 	var prev_scroll_value = _v_scroll.value
 
 	# Add the text

@@ -8,7 +8,7 @@ use crate::{CanEntry, CanId};
 use can_dbc::{ByteOrder, Dbc, DbcError};
 use core::panic;
 use crosscan::can::CanFrame;
-use godot::builtin::{GString, VariantArray};
+use godot::builtin::{GString, VarArray};
 use godot::prelude::*;
 use std::collections::HashMap;
 
@@ -100,7 +100,7 @@ impl CanParser {
 
     /// Parses a set of CanDataFrames into a table of Godot CAN entries. Will optionally use a DBC for deserialisation if provided.
     pub fn parse_can_table(&self, can_entries: &HashMap<CanId, CanEntry>) -> Array<Variant> {
-        let mut godot_can_table = VariantArray::new();
+        let mut godot_can_table = VarArray::new();
 
         for (_, entry) in can_entries.iter() {
             let godot_can_entry = &self.parse_can_entry(entry).to_variant();
@@ -147,12 +147,12 @@ impl CanParser {
 
     /// Parses a given CanEntry into a Godot CAN entry. Will optionally use a DBC for deserialisation if provided.
     fn parse_can_entry(&self, can_entry: &CanEntry) -> Array<Variant> {
-        let mut godot_can_entry = VariantArray::new();
+        let mut godot_can_entry = VarArray::new();
 
         godot_can_entry
-            .push(&GString::from(format!("{:?}", can_entry.timestamps.back())).to_variant());
-        godot_can_entry.push(&GString::from(format!("{:?}", can_entry.freq_hz)).to_variant());
-        godot_can_entry.push(&GString::from(format!("{:?}", can_entry.frame.id())).to_variant());
+            .push(&GString::from(&format!("{:?}", can_entry.timestamps.back())).to_variant());
+        godot_can_entry.push(&GString::from(&format!("{:?}", can_entry.freq_hz)).to_variant());
+        godot_can_entry.push(&GString::from(&format!("{:?}", can_entry.frame.id())).to_variant());
 
         // Query if a dbc entry exists for this id
         if let Some(dbc) = &self.dbc {
@@ -160,7 +160,7 @@ impl CanParser {
 
             // if dbc attempt to deserialize
             if let Some(message_info) = dbc.messages.iter().find(|m| m.id == query_id) {
-                godot_can_entry.push(&GString::from(message_info.name.clone()).to_variant());
+                godot_can_entry.push(&GString::from(&message_info.name).to_variant());
 
                 // TODO: Check if can deserialize
                 godot_can_entry = self.deserialise_dbc_data(
@@ -182,7 +182,7 @@ impl CanParser {
 
         // The last element indicates to Godot whether the frame is Extended
         godot_can_entry
-            .push(&GString::from(format!("{:?}", can_entry.frame.is_extended())).to_variant());
+            .push(&GString::from(&format!("{:?}", can_entry.frame.is_extended())).to_variant());
 
         godot_can_entry
     }
@@ -195,12 +195,12 @@ impl CanParser {
         message_info: &can_dbc::Message,
     ) -> Array<Variant> {
         for signal in &message_info.signals {
-            godot_can_entry.push(&GString::from(signal.name.clone()).to_variant());
+            godot_can_entry.push(&GString::from(&signal.name).to_variant());
 
             let bytes = frame.data();
 
             godot_can_entry.push(
-                &GString::from(self.deserialise_signal_value(message_info, signal, bytes))
+                &GString::from(&self.deserialise_signal_value(message_info, signal, bytes))
                     .to_variant(),
             );
         }
@@ -311,7 +311,7 @@ impl CanParser {
         frame: CanFrame,
     ) -> Array<Variant> {
         for byte in frame.data() {
-            godot_can_entry.push(&GString::from(format!("{:?}", byte)).to_variant())
+            godot_can_entry.push(&GString::from(&format!("{:?}", byte)).to_variant())
         }
         godot_can_entry
     }

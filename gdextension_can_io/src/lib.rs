@@ -307,7 +307,7 @@ impl GodotCanBridge {
     }
 
     #[func]
-    fn get_can_table(&mut self) -> VariantArray {
+    fn get_can_table(&mut self) -> VarArray {
         self.can_parser
             .parse_can_table(&self.runtime.block_on(self.can_entries.lock()))
     }
@@ -325,9 +325,12 @@ impl GodotCanBridge {
     }
 
     #[func]
-    fn send_can_frame(&mut self, can_id_value: u32, is_extended: bool, data: VariantArray) {
+    fn send_can_frame(&mut self, can_id_value: u32, is_extended: bool, data: VarArray) {
         // Convert from Godot Variant to typed u8 vector
-        let packed_bytes = PackedByteArray::from(&data);
+        let packed_bytes = data
+            .to_variant()
+            .try_to_relaxed::<PackedByteArray>()
+            .expect("CAN frame data must be convertible to bytes");
         let byte_slice_data: &[u8] = packed_bytes.as_slice();
 
         // Create a CAN data frame with the ID and some data (up to 8 bytes for a standard CAN frame)
@@ -429,7 +432,7 @@ impl GodotCanBridge {
                     gd_can_history.push_str(&parsed_data);
                 }
             }
-            return GString::from(gd_can_history);
+            return GString::from(&gd_can_history);
         }
     }
 }
