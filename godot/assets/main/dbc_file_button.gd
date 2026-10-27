@@ -13,13 +13,28 @@ func _ready() -> void:
 
 
 func _button_pressed() -> void:
-	var file_dialog = FileDialog.new()
+	var file_dialog := create_file_dialog()
 	add_child(file_dialog)
+	file_dialog.popup_centered_ratio(0.7)
+
+
+static func home_directory() -> String:
+	var home := OS.get_environment("USERPROFILE" if OS.get_name() == "Windows" else "HOME")
+	if home.is_empty() or not DirAccess.dir_exists_absolute(home):
+		home = OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS)
+	return home.replace("\\", "/")
+
+
+func create_file_dialog() -> FileDialog:
+	var file_dialog := FileDialog.new()
 	file_dialog.set_file_mode(file_dialog.FILE_MODE_OPEN_FILE)
 	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	file_dialog.current_dir = home_directory()
 	file_dialog.filters = ["*.dbc; CAN DBC Files"]
-	file_dialog.popup()
 	file_dialog.file_selected.connect(_process_file)
+	file_dialog.file_selected.connect(func(_path: String): file_dialog.queue_free())
+	file_dialog.canceled.connect(file_dialog.queue_free)
+	return file_dialog
 
 
 func _process_file(x: String) -> void:
