@@ -1,20 +1,18 @@
+mod mf4;
+
 use crate::{can_parser::CanParser, trace_filter::TraceFilter};
 use crosscan::can::CanFrame;
-use serde::Serialize;
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-#[derive(Serialize)]
 pub struct DecodedSignal {
     pub name: String,
     pub value: f64,
     pub unit: String,
 }
 
-#[derive(Serialize)]
 struct Record<'a> {
     timestamp_us: u64,
     interface: &'a str,
@@ -31,7 +29,7 @@ struct Record<'a> {
 pub struct Recorder {
     raw: Option<BufWriter<File>>,
     decoded: Option<BufWriter<File>>,
-    mf4: Option<Mf4Process>,
+    mf4: Option<mf4::Mf4Writer>,
     parser: CanParser,
     decode: bool,
     pub paths: Vec<PathBuf>,
@@ -73,21 +71,23 @@ impl Recorder {
         };
         let mut raw = None;
         let mut decoded = None;
-        let mut raw_path = None;
-        let mut decoded_path = None;
+        let mut raw_mf4 = None;
+        let mut decoded_mf4 = None;
         let result = (|| {
             if mode != 1 {
-                let (path, file) = reserve("raw")?;
-                raw_path = Some(path);
+                let (_, file) = reserve("raw")?;
                 if format == "csv" {
                     raw = Some(BufWriter::new(file));
+                } else {
+                    raw_mf4 = Some(file);
                 }
             }
             if mode != 0 {
-                let (path, file) = reserve("decoded")?;
-                decoded_path = Some(path);
+                let (_, file) = reserve("decoded")?;
                 if format == "csv" {
                     decoded = Some(BufWriter::new(file));
+                } else {
+                    decoded_mf4 = Some(file);
                 }
             }
             if let Some(file) = &mut raw {
@@ -105,10 +105,10 @@ impl Recorder {
                 .map_err(|e| e.to_string())?;
             }
             let mf4 = if format == "mf4" {
-                Some(Mf4Process::start(
-                    raw_path.as_deref(),
-                    decoded_path.as_deref(),
-                    &directory.join(format!("{prefix}-mf4.log")),
+                Some(mf4::Mf4Writer::start(
+                    raw_mf4.take(),
+                    decoded_mf4.take(),
+                    u64::try_from(stamp).map_err(|_| "MF4 file start time is out of range.")?,
                 )?)
             } else {
                 None
@@ -132,6 +132,8 @@ impl Recorder {
             Err(error) => {
                 drop(raw);
                 drop(decoded);
+                drop(raw_mf4);
+                drop(decoded_mf4);
                 for path in paths {
                     let _ = std::fs::remove_file(path);
                 }
@@ -261,130 +263,75 @@ fn csv_row(output: &mut impl Write, fields: &[&str]) -> std::io::Result<()> {
     writeln!(output)
 }
 
-struct Mf4Process {
-    child: Child,
-    input: Option<BufWriter<ChildStdin>>,
-    log: PathBuf,
-}
-
-impl Mf4Process {
-    fn start(raw: Option<&Path>, decoded: Option<&Path>, log: &Path) -> Result<Self, String> {
-        let python = std::env::var_os("CYDERVIS_MF4_PYTHON").unwrap_or_else(|| "python".into());
-        let mut command = Command::new(python);
-        command
-            .args(["-u", "-c", include_str!("mf4_writer.py")])
-            .arg(raw.unwrap_or(Path::new("")))
-            .arg(decoded.unwrap_or(Path::new("")))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(File::create(log).map_err(|e| e.to_string())?);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x08000000);
-        }
-        let mut child = command.spawn().map_err(|e| format!("Cannot start Python for MF4: {e}. Install Python and python-can[mf4], or set CYDERVIS_MF4_PYTHON to your interpreter."))?;
-        let mut ready = String::new();
-        let result = BufReader::new(child.stdout.take().unwrap()).read_line(&mut ready);
-        if result.is_err() || ready.trim() != "READY" {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!(
-                "MF4 writer could not start. Install with: python -m pip install 'python-can[mf4]>=4.6,<5' 'asammdf>=8,<9'. Diagnostics: {}",
-                std::fs::read_to_string(log).unwrap_or_default()
-            ));
-        }
-        let input = child.stdin.take().map(BufWriter::new);
-        Ok(Self {
-            child,
-            input,
-            log: log.to_owned(),
-        })
-    }
-
-    fn record(&mut self, frame: &Record) -> Result<(), String> {
-        let input = self.input.as_mut().ok_or("MF4 recording has stopped")?;
-        serde_json::to_writer(&mut *input, frame).map_err(|e| e.to_string())?;
-        writeln!(input).map_err(|e| e.to_string())
-    }
-
-    fn flush(&mut self) -> Result<(), String> {
-        if let Some(input) = &mut self.input {
-            input.flush().map_err(|e| e.to_string())?;
-        }
-        if let Some(status) = self.child.try_wait().map_err(|e| e.to_string())? {
-            return Err(format!(
-                "MF4 writer exited ({status}): {}",
-                std::fs::read_to_string(&self.log).unwrap_or_default()
-            ));
-        }
-        Ok(())
-    }
-
-    fn finish(&mut self) -> Result<(), String> {
-        let flush = self.input.take().map(|mut input| input.flush()).transpose();
-        let status = self.child.wait().map_err(|e| e.to_string())?;
-        if !status.success() {
-            return Err(format!(
-                "MF4 finalization failed: {}",
-                std::fs::read_to_string(&self.log).unwrap_or_default()
-            ));
-        }
-        flush.map_err(|e| e.to_string())?;
-        Ok(())
-    }
-}
-
-impl Drop for Mf4Process {
-    fn drop(&mut self) {
-        let _ = self.finish();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     #[test]
-    fn mf4_round_trip_when_python_configured() {
-        let Some(python) = std::env::var_os("CYDERVIS_MF4_PYTHON") else {
-            eprintln!("Set CYDERVIS_MF4_PYTHON to run the MF4 integration test");
-            return;
-        };
+    fn native_mf4_round_trip() {
         let directory = std::env::temp_dir().join(format!("cyder mf4 {}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
+        let dbc_path = directory.join("capture.dbc");
+        let mut dbc = std::fs::read_to_string("../godot/tests/transmit.dbc").unwrap();
+        dbc.push_str(concat!(
+            "\nBO_ 291 Auxiliary: 3 Device\n",
+            " SG_ voltage : 0|16@1+ (0.1,0) [0|6553.5] \"V\" PC\n",
+            " SG_ temperature : 16|8@1- (0.5,-40) [-104|23.5] \"°C\" PC\n",
+        ));
+        std::fs::write(&dbc_path, dbc).unwrap();
         let mut parser = CanParser::new();
-        parser
-            .open_dbc("../godot/tests/transmit.dbc".into())
-            .unwrap();
+        parser.open_dbc(dbc_path.to_str().unwrap().into()).unwrap();
         let mut recorder = Recorder::start(&directory, 2, "mf4", parser).unwrap();
         let filter = TraceFilter::parse("0:0,#FFFFFFFF").unwrap();
-        for stamp in 0..2050 {
+        for stamp in 0..6000 {
             let mut frame =
                 CanFrame::new_eff(0x10302, &[0x6f, 0x12, 0x83, 0x3a, 11, 1, 0, 0]).unwrap();
             frame.set_timestamp(Some(10000 + stamp * 1000));
             recorder.record(&frame, "can0", &filter).unwrap();
+            if stamp % 1000 == 0 {
+                let mut auxiliary = CanFrame::new(0x123, &[123, 0, 246]).unwrap();
+                auxiliary.set_timestamp(Some(10500 + stamp * 1000));
+                recorder.record(&auxiliary, "sensor °C", &filter).unwrap();
+            }
         }
-        for mut frame in [
+        recorder.flush().unwrap();
+        for (index, mut frame) in [
             CanFrame::new(0x123, &[0x12]).unwrap(),
+            CanFrame::new(0x123, &[]).unwrap(),
             CanFrame::new_remote(0x124, 8, false).unwrap(),
+            CanFrame::new_remote(0x1ABCDE, 3, true).unwrap(),
             CanFrame::new_error(4).unwrap(),
-        ] {
-            frame.set_timestamp(Some(3_000_000));
+            CanFrame::new_eff(0x10302, &[0x6f, 0x12, 0x83, 0x3a]).unwrap(),
+            CanFrame::new_eff(0x10302, &[0, 0, 0xc0, 0x7f, 11, 1, 0, 0]).unwrap(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            frame.set_timestamp(Some(7_000_000 + index as u64 * 1000));
             recorder.record(&frame, "can0", &filter).unwrap();
         }
-        recorder.finish().unwrap();
-        let output = Command::new(python)
-            .arg("tests/verify_mf4.py")
-            .args(&recorder.paths)
-            .output()
+        recorder
+            .record(
+                &CanFrame::new(0x456, &[0xFF]).unwrap(),
+                "can0",
+                &TraceFilter::parse("123:7FF").unwrap(),
+            )
             .unwrap();
-        assert!(
-            output.status.success(),
-            "{} {}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        recorder.finish().unwrap();
+        if let Some(python) = std::env::var_os("CYDERVIS_MF4_VERIFY_PYTHON") {
+            let output = Command::new(python)
+                .arg("tests/verify_mf4.py")
+                .args(&recorder.paths)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{} {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
         let paths = recorder.paths.clone();
         drop(recorder);
         for path in paths {
@@ -465,9 +412,6 @@ mod tests {
 
     #[test]
     fn raw_decoded_and_empty_mf4_modes_finalize() {
-        if std::env::var_os("CYDERVIS_MF4_PYTHON").is_none() {
-            return;
-        }
         let directory = std::env::temp_dir().join(format!("cyder modes {}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         for format in ["csv", "mf4"] {

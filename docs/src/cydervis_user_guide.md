@@ -174,18 +174,10 @@ with message and signal names, value and unit. MF4 raw files use the standard CA
 bus logging layout; decoded files contain time series named `Message.Signal`.
 MF4 time channels use seconds with a common file start time for both files.
 
-MF4 capture uses Python 3 with `python-can` and `asammdf`. Install them in the
-interpreter used by CyderVis:
-
-```text
-python -m pip install "python-can[mf4]>=4.6,<5" "asammdf>=8,<9"
-```
-
-Set `CYDERVIS_MF4_PYTHON` to a full Python executable path to use a virtual
-environment. A missing interpreter or dependency is reported when starting MF4
-capture. CSV recording has no Python dependency. MF4 diagnostics are saved next
-to the recording in a `*-mf4.log` file. MF4 uses temporary storage during capture
-and produces the final files on stop; close CyderVis normally to finalize them.
+MF4 capture uses a Rust writer compiled into CyderVis; no Python installation or
+additional recording software is required. It writes uncompressed MDF 4.10 files
+in bounded chunks directly to the recording folder, with periodic flushes during
+capture. Stop recording or close CyderVis normally to save the final chunk.
 
 ## Trace filters
 

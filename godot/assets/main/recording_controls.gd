@@ -40,7 +40,7 @@ func _ready() -> void:
 	options.add_child(_csv)
 	_mf4 = CheckBox.new()
 	_mf4.text = "MF4"
-	_mf4.tooltip_text = "Requires Python, python-can[mf4] and asammdf."
+	_mf4.tooltip_text = "Record MDF4 files with the built-in Rust writer."
 	_mf4.button_group = format_group
 	options.add_child(_mf4)
 	_start = Button.new()

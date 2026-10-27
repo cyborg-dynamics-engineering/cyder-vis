@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install MF4 test dependencies
+      - name: Install independent MF4 read-back tools
         run: python -m pip install "python-can[mf4]>=4.6,<5" "asammdf>=8,<9"
       - name: Install Godot and configure tests
         shell: python
@@ -40,7 +40,7 @@ jobs:
           binary = destination / (name.replace('.exe', '_console.exe') if os.name == 'nt' else name)
           binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as environment:
-              environment.write(f'GODOT_BIN={binary}\nCYDERVIS_MF4_PYTHON={sys.executable}\n')
+              environment.write(f'GODOT_BIN={binary}\nCYDERVIS_MF4_VERIFY_PYTHON={sys.executable}\n')
       - name: Rust tests including MF4 read-back
         run: cargo test --manifest-path gdextension_can_io/Cargo.toml --locked --lib
       - name: Build extension
