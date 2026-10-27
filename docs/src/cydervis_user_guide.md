@@ -175,14 +175,34 @@ delays. Frames without a hardware timestamp use the service's host timestamp;
 the current Linux SocketCAN backend uses application receive time. Reconnecting
 or a substantial backward clock reset establishes a new clock alignment.
 
-CSV raw columns contain timestamp in microseconds on the app timeline, interface,
+The hardware timestamp indicator appears only for adapters with confirmed
+hardware capability: gsusb firmware advertising its hardware timestamp feature
+(including the SH-C31A with supported firmware) and PCAN devices reporting that
+capability. It shows **Hardware timestamping enabled** after receiving hardware
+ticks. Waiting, disabled and host-fallback states explain why hardware timing
+is not currently confirmed. Unknown, unsupported, SLCAN and virtual interfaces
+do not show the indicator.
+
+The **Time origin** radio buttons apply to both the trace and new recordings:
+
+- **System epoch**: seconds since 1970-01-01 UTC, aligned to the system clock at
+  app launch. Later wall-clock changes do not change hardware intervals.
+- **App time** (default): seconds since the application started.
+- **Restart on recording**: reset to zero after each successful recording start.
+  Before the first recording, use app time. Older or queued frames may have
+  negative times after the origin resets.
+
+Time-origin controls are locked while recording. Changing the origin changes
+the displayed time and saved offsets while retaining the hardware intervals.
+
+CSV raw columns contain timestamp in microseconds for the selected origin, interface,
 hex CAN ID, frame flags, DLC and hex bytes. Decoded CSV has one row per signal
 with message and signal names, value and unit. MF4 raw files use the standard CAN
 bus logging layout; decoded files contain time series named `Message.Signal`.
-MF4 time channels use seconds from recording start, with a common file start
-time for raw and decoded files. Hardware clock intervals are retained; the UTC
-origin is aligned to the host clock. A queued frame timestamped before recording
-started can have a negative time offset.
+MF4 time channels use seconds for the selected origin. Raw and decoded files
+share the same UTC origin in their headers: 1970 for system epoch, app launch for
+app time, or recording start when restarting on recording. Adding that header
+time to a channel's offset gives the same absolute UTC time in every mode.
 
 MF4 capture uses a Rust writer compiled into CyderVis; no Python installation or
 additional recording software is required. It writes uncompressed MDF 4.10 files

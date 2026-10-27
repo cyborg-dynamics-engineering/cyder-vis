@@ -41,6 +41,21 @@ validation.
 Timestamp tests inject hardware ticks with deliberately different host/delivery
 times and verify unchanged hardware spacing, zero/missing timestamps, reordered
 samples, extended counter rollover and clock resets. A mock service exercises
-the timestamp fields over the actual named-pipe protocol. MF4 tests verify that
-raw and decoded channels subtract recording start from the app timeline, so a
-capture started an hour after launch does not acquire an extra hour of offset.
+the timestamp fields over the actual named-pipe protocol. Trace controls offer
+system UNIX epoch, app time (default), and restart on recording. The selected
+origin applies to trace, CSV and MF4, while hardware intervals remain unchanged.
+Origin controls lock during recording. A failed start does not reset time; older
+or queued samples may appear negative after restarting a recording origin.
+MF4 headers identify the selected origin, keeping absolute UTC time consistent.
+Native and optional independent readers check all three origins, raw/decoded
+agreement, and recordings started an hour after app launch.
+
+The Windows hardware indicator requires a gsusb/PCAN adapter with an explicitly
+reported hardware timestamp capability. gsusb uses the firmware HW_TIMESTAMP
+feature bit, not the model name. Unknown/unsupported adapters, SLCAN and virtual
+interfaces have no indicator. Supported adapters show disabled, waiting for
+hardware ticks, enabled, or host fallback according to service configuration and
+received frames. Disconnect clears the indicator. The mock service checks these
+states and all time origins through Godot on the actual named-pipe protocol.
+The current Linux crosscan receive API does not expose hardware timestamp
+metadata, so it does not advertise hardware timestamping in this UI.

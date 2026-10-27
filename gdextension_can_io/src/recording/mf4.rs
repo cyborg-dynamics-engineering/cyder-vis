@@ -43,7 +43,7 @@ pub(super) struct Mf4Writer {
     buses: HashMap<String, u8>,
     finished: bool,
     failure: Option<String>,
-    timestamp_origin_us: u64,
+    timestamp_offset_us: i128,
 }
 
 impl Mf4Writer {
@@ -51,7 +51,7 @@ impl Mf4Writer {
         raw: Option<File>,
         decoded: Option<File>,
         epoch_ns: u64,
-        timestamp_origin_us: u64,
+        timestamp_offset_us: i128,
     ) -> Result<Self, String> {
         Ok(Self {
             raw: raw
@@ -67,7 +67,7 @@ impl Mf4Writer {
             buses: HashMap::new(),
             finished: false,
             failure: None,
-            timestamp_origin_us,
+            timestamp_offset_us,
         })
     }
 
@@ -78,10 +78,9 @@ impl Mf4Writer {
     }
 
     fn write_record(&mut self, record: &Record<'_>) -> io::Result<()> {
-        // Subtract integers before conversion to preserve microsecond spacing.
+        // Apply the selected origin in integer microseconds before conversion.
         // Negative offsets are valid for queued frames captured before Start.
-        let timestamp_s =
-            (record.timestamp_us as i128 - self.timestamp_origin_us as i128) as f64 * 1e-6;
+        let timestamp_s = (record.timestamp_us as i128 + self.timestamp_offset_us) as f64 * 1e-6;
         if record.dlc > 8 || record.data.len() > 8 {
             return Err(invalid(
                 "MF4 capture supports classic CAN payloads up to 8 bytes.",
@@ -641,7 +640,7 @@ mod tests {
             Some(File::create(&raw).unwrap()),
             Some(File::create(&decoded).unwrap()),
             1_710_000_000_000_000_000,
-            origin,
+            -i128::from(origin),
         )
         .unwrap();
         for timestamp_us in [origin - 1000, origin + 5000, origin + 6000] {

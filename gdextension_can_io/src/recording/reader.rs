@@ -1048,7 +1048,14 @@ mod tests {
             Self(path)
         }
         fn native(&self) -> PathBuf {
-            let mut recorder = Recorder::start(&self.0, 0, "mf4", CanParser::new(), None).unwrap();
+            let mut recorder = Recorder::start(
+                &self.0,
+                0,
+                "mf4",
+                CanParser::new(),
+                crate::timestamps::Origin::default(),
+            )
+            .unwrap();
             let mut frame = CanFrame::new(0x123, &[1, 2, 3]).unwrap();
             frame.set_timestamp(Some(12345));
             recorder

@@ -16,7 +16,7 @@ import threading
 import time
 
 
-def run(executable):
+def run_case(executable, driver, capability, enabled, epoch):
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.CreateNamedPipeW.argtypes = [wintypes.LPCWSTR] + [wintypes.DWORD] * 6 + [wintypes.LPVOID]
     kernel.CreateNamedPipeW.restype = wintypes.HANDLE
@@ -64,9 +64,9 @@ def run(executable):
 
     with tempfile.TemporaryDirectory(prefix="cyder hardware clock ") as directory:
         ready = Path(directory) / "ready"
-        status = dict(name=name, driver="virtual", device="timestamp-mock", bitrate=500000,
-                      desired_up=True, state="up", bus_state="error_active", timestamps=True,
-                      capabilities=dict(hardware_can_fd=False, can_fd=False, hardware_timestamps=True,
+        status = dict(name=name, driver=driver, device="timestamp-mock", bitrate=500000,
+                      desired_up=True, state="up", bus_state="error_active", timestamps=enabled,
+                      capabilities=dict(hardware_can_fd=False, can_fd=False, hardware_timestamps=capability,
                                         bus_state=False, software_tx_echo=False),
                       counters=dict(rx_frames=0, tx_frames=0, rx_errors=0, tx_errors=0,
                                     client_drops=0, disconnects=0, bus_off_events=0), active_clients=1, last_error=None,
@@ -96,7 +96,12 @@ def run(executable):
                             write(dict(kind="frame", event=dict(sequence=index + 1,
                                 frame=dict(id=0x10302, extended=True, dlc=8, data=[0x6f, 0x12, 0x83, 0x3a, 11, 1, 0, 0]),
                                 direction="rx", source_client_id=None, timestamp_us=time.time_ns() // 1000,
-                                hardware_timestamp_us=9_000_000 + offsets[index])))
+                                hardware_timestamp_us=(9_000_000 + offsets[index]) if enabled else None)))
+                        deadline = time.monotonic() + 10
+                        while ready.read_text() != "hardware":
+                            if time.monotonic() > deadline:
+                                raise TimeoutError("Godot did not check hardware indicator")
+                            time.sleep(0.005)
                         write(dict(kind="frame", event=dict(sequence=7,
                             frame=dict(id=0x456, dlc=1, data=[42]), direction="rx", source_client_id=None,
                             timestamp_us=time.time_ns() // 1000, hardware_timestamp_us=None)))
@@ -110,18 +115,33 @@ def run(executable):
         server.start()
         try:
             environment = dict(os.environ, CYDERVIS_TIMESTAMP_INTERFACE=name,
-                               CYDERVIS_TIMESTAMP_DIRECTORY=directory, CYDERVIS_TIMESTAMP_READY=str(ready))
-            result = subprocess.run([executable, "--headless", "--path", str(Path(__file__).resolve().parents[1]),
-                                     "--script", "res://tests/hardware_timestamps.gd"],
-                                    env=environment, capture_output=True, text=True, encoding="utf-8", timeout=20)
+                               CYDERVIS_TIMESTAMP_DIRECTORY=directory, CYDERVIS_TIMESTAMP_READY=str(ready),
+                               CYDERVIS_TIMESTAMP_EPOCH=str(epoch), CYDERVIS_TIMESTAMP_ENABLED=str(int(enabled)),
+                               CYDERVIS_TIMESTAMP_SUPPORTED=str(int(driver in ("gsusb", "pcan") and capability is True)))
+            try:
+                result = subprocess.run([executable, "--headless", "--path", str(Path(__file__).resolve().parents[1]),
+                                         "--script", "res://tests/hardware_timestamps.gd"],
+                                        env=environment, capture_output=True, text=True, encoding="utf-8", timeout=20)
+            except subprocess.TimeoutExpired as error:
+                raise AssertionError(f"Godot timed out:\n{error.stdout!r}\n{error.stderr!r}") from error
             output = result.stdout + result.stderr
             server.join(timeout=2)
             assert not failures, failures
             assert result.returncode == 0 and "tests passed" in output and "SCRIPT ERROR" not in output, output
-            print("PASS hardware timestamp trace and MF4 capture with jittered deliveries")
+            print(f"PASS timestamp indicator and epoch: {driver}, capability={capability}, enabled={enabled}, epoch={epoch}")
         finally:
             kernel.CancelIoEx(handle, None)
             kernel.CloseHandle(handle)
+
+
+def run(executable):
+    for epoch in range(3):
+        run_case(executable, "gsusb", True, True, epoch)
+    for driver, capability, enabled in [
+        ("gsusb", False, True), ("gsusb", None, True), ("slcan", None, True),
+        ("virtual", True, True), ("gsusb", True, False), ("pcan", True, True),
+    ]:
+        run_case(executable, driver, capability, enabled, 1)
 
 
 if __name__ == "__main__":

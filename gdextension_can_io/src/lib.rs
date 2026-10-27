@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
 
@@ -61,6 +61,8 @@ struct GodotCanBridge {
     adapter_discovery: adapter_discovery::AdapterDiscovery,
     interface_registry: interface_registry::InterfaceRegistry,
     recorder: Arc<Mutex<Option<recording::Recorder>>>,
+    timeline: timestamps::Timeline,
+    hardware_timestamp_status: Arc<Mutex<i32>>,
 
     /// Base Godot class (Rust module will be implemented as a Node in Godot)
     base: Base<Node>,
@@ -98,6 +100,14 @@ impl INode for GodotCanBridge {
             adapter_discovery: adapter_discovery::AdapterDiscovery::default(),
             interface_registry: interface_registry::InterfaceRegistry::default(),
             recorder: Arc::new(Mutex::new(None)),
+            timeline: timestamps::Timeline::new(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+                    .min(u64::MAX as u128) as u64,
+            ),
+            hardware_timestamp_status: Arc::new(Mutex::new(0)),
             base,
         }
     }
@@ -105,6 +115,36 @@ impl INode for GodotCanBridge {
 
 #[godot_api]
 impl GodotCanBridge {
+    /// Origin selection changes display/output only, never the receive clock.
+    #[func]
+    fn set_timestamp_epoch(&mut self, mode: i32) -> String {
+        if self.is_recording() {
+            return "Stop recording before changing the time origin.".into();
+        }
+        match timestamps::Epoch::try_from(mode) {
+            Ok(epoch) => {
+                self.timeline.epoch = epoch;
+                String::new()
+            }
+            Err(error) => error.into(),
+        }
+    }
+
+    #[func]
+    fn get_timestamp_epoch(&self) -> i32 {
+        self.timeline.epoch as i32
+    }
+
+    /// Only verified transceiver capabilities are eligible for a visible badge.
+    #[func]
+    fn get_hardware_timestamp_status(&mut self) -> i32 {
+        if self.is_alive() {
+            *self.runtime.block_on(self.hardware_timestamp_status.lock())
+        } else {
+            0
+        }
+    }
+
     #[func]
     fn start_recording(&mut self, directory: String, mode: i32, format: String) -> String {
         if !self.is_alive() {
@@ -114,15 +154,25 @@ impl GodotCanBridge {
         if recorder.is_some() {
             return "A recording is already running.".into();
         }
+        // Commit the new recording origin only after the files open successfully.
+        let mut timeline = self.timeline;
+        timeline.start_recording(
+            self.runtime
+                .block_on(self.start_time.lock())
+                .elapsed()
+                .as_micros()
+                .min(u64::MAX as u128) as u64,
+        );
         match recording::Recorder::start(
             std::path::Path::new(&directory),
             mode,
             &format,
             self.can_parser.clone(),
-            Some(*self.runtime.block_on(self.start_time.lock())),
+            timeline.origin(),
         ) {
             Ok(value) => {
                 *recorder = Some(value);
+                self.timeline = timeline;
                 String::new()
             }
             Err(error) => error,
@@ -362,6 +412,8 @@ impl GodotCanBridge {
         let trace_history = Arc::clone(&self.trace_history);
         let trace_filter = Arc::clone(&self.trace_filter);
         let recorder = Arc::clone(&self.recorder);
+        let hardware_timestamp_status = Arc::clone(&self.hardware_timestamp_status);
+        *self.runtime.block_on(hardware_timestamp_status.lock()) = 0;
         self.read_handle = Some(tokio::spawn(async {
             read_can(
                 interface_name,
@@ -374,6 +426,7 @@ impl GodotCanBridge {
                 trace_history,
                 trace_filter,
                 recorder,
+                hardware_timestamp_status,
             )
             .await;
         }));
@@ -500,7 +553,7 @@ impl GodotCanBridge {
                     continue;
                 }
                 // Push the raw CAN frame as a formatted String
-                gd_can_history.push_str(&format_can_frame(frame));
+                gd_can_history.push_str(&format_can_frame(frame, self.timeline.origin()));
                 gd_can_history.push_str("\n");
 
                 // Push the deserialised CAN data as a String
@@ -524,6 +577,7 @@ async fn read_can(
     trace_history: Arc<Mutex<VecDeque<CanFrame>>>,
     trace_filter: Arc<Mutex<TraceFilter>>,
     recorder: Arc<Mutex<Option<recording::Recorder>>>,
+    hardware_timestamp_status: Arc<Mutex<i32>>,
 ) {
     // Select a specific CAN Socket implementation for the supported operating systems
     #[cfg(target_os = "linux")]
@@ -555,6 +609,10 @@ async fn read_can(
         }
     };
 
+    #[cfg(target_os = "windows")]
+    {
+        *hardware_timestamp_status.lock().await = socket.hardware_timestamp_status();
+    }
     let mut receive_clock = timestamps::Clock::default();
     loop {
         {
@@ -605,10 +663,15 @@ async fn read_can(
         // Process the incoming CanFrame
         match res {
             Ok(mut frame) => {
+                #[cfg(target_os = "windows")]
+                {
+                    *hardware_timestamp_status.lock().await = socket.hardware_timestamp_status();
+                }
                 *bit_counter.lock().await += can_frame_bits(&frame);
 
-                let host_timestamp_us = u64::try_from(start_time.lock().await.elapsed().as_micros())
-                    .unwrap_or(u64::MAX);
+                let host_timestamp_us =
+                    u64::try_from(start_time.lock().await.elapsed().as_micros())
+                        .unwrap_or(u64::MAX);
                 let current_timestamp_us =
                     receive_clock.timestamp(frame.timestamp(), host_timestamp_us);
                 frame.set_timestamp(Some(current_timestamp_us));
@@ -706,6 +769,7 @@ async fn read_can(
             }
         }
     }
+    *hardware_timestamp_status.lock().await = 0;
     finish_recording(&recorder).await;
 }
 
@@ -740,14 +804,15 @@ fn can_frame_bits(frame: &CanFrame) -> usize {
 }
 
 /// Converts a CanFrame into a String representation
-fn format_can_frame(frame: &CanFrame) -> String {
+fn format_can_frame(frame: &CanFrame, origin: timestamps::Origin) -> String {
     let mut frame_string = String::new();
 
     let us: u64 = match frame.timestamp() {
         Some(timestamp) => timestamp,
         None => 0,
     };
-    frame_string.push_str(&format!("{:04}.{:06}  ", us / 1_000_000, us % 1_000_000));
+    frame_string.push_str(&timestamps::format_seconds(origin.timestamp_us(us)));
+    frame_string.push_str("  ");
 
     if frame.is_extended() {
         frame_string.push_str(&format!("{:08X}   ", frame.id()));

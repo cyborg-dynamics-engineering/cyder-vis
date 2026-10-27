@@ -18,7 +18,12 @@ func _reply(decoder: Mf4Decoder) -> Dictionary:
 
 
 func _run() -> void:
+	Engine.max_fps = 120
 	var bridge := GodotCanBridge.new()
+	var mode := OS.get_environment("CYDERVIS_TIMESTAMP_EPOCH").to_int()
+	var enabled := OS.get_environment("CYDERVIS_TIMESTAMP_ENABLED") == "1"
+	var supported := OS.get_environment("CYDERVIS_TIMESTAMP_SUPPORTED") == "1"
+	assert(bridge.set_timestamp_epoch(mode).is_empty())
 	var app_ticks := Time.get_ticks_usec()
 	root.add_child(bridge)
 	assert(bridge.load_dbc_file(ProjectSettings.globalize_path("res://tests/transmit.dbc")))
@@ -28,10 +33,13 @@ func _run() -> void:
 			break
 		await create_timer(0.005).timeout
 	assert(bridge.get_bitrate() == 500000)
+	assert(bridge.get_hardware_timestamp_status() == ((2 if enabled else 1) if supported else 0))
 	# Exercise recording started after the app's receive timeline is underway.
 	await create_timer(0.25).timeout
 	var origin := float(Time.get_ticks_usec() - app_ticks) * 1e-6
 	assert(bridge.start_recording(OS.get_environment("CYDERVIS_TIMESTAMP_DIRECTORY"), 2, "mf4").is_empty())
+	assert(not bridge.set_timestamp_epoch((mode + 1) % 3).is_empty())
+	assert(bridge.get_timestamp_epoch() == mode)
 	var paths := bridge.recording_files().split("\n")
 	var ready := FileAccess.open(OS.get_environment("CYDERVIS_TIMESTAMP_READY"), FileAccess.WRITE)
 	ready.store_string("ready")
@@ -39,9 +47,19 @@ func _run() -> void:
 	var trace := ""
 	for attempt in 500:
 		trace = bridge.get_recent_can_msgs()
-		if trace.count("00010302") == 6 and trace.contains("456"):
+		if trace.count("00010302") == 6:
 			break
 		await create_timer(0.005).timeout
+	assert(bridge.get_hardware_timestamp_status() == ((3 if enabled else 1) if supported else 0))
+	ready = FileAccess.open(OS.get_environment("CYDERVIS_TIMESTAMP_READY"), FileAccess.WRITE)
+	ready.store_string("hardware")
+	ready.close()
+	for attempt in 500:
+		trace = bridge.get_recent_can_msgs()
+		if trace.contains("456"):
+			break
+		await create_timer(0.005).timeout
+	assert(bridge.get_hardware_timestamp_status() == ((4 if enabled else 1) if supported else 0))
 	var times: Array[float] = []
 	for line in trace.split("\n"):
 		if line.contains("00010302"):
@@ -50,7 +68,12 @@ func _run() -> void:
 	assert(trace.contains("456"), "Missing host-timestamp fallback packet")
 	var offsets := [0.0, 0.001, 0.002, 0.0015, 0.003, 0.004]
 	for index in times.size():
-		assert(abs(times[index] - times[0] - offsets[index]) < 1e-9, trace)
+		if enabled:
+			assert(abs(times[index] - times[0] - offsets[index]) < 1e-6, trace)
+	match mode:
+		0: assert(abs(times[0] - Time.get_unix_time_from_system()) < 5.0)
+		1: assert(times[0] >= origin and times[0] < origin + 1.0)
+		2: assert(times[0] >= 0.0 and times[0] < 1.0)
 	assert(bridge.stop_recording().is_empty())
 	var decoder := Mf4Decoder.new()
 	for path: String in paths:
@@ -65,10 +88,20 @@ func _run() -> void:
 				captured.append(str(row[0]).to_float())
 		assert(captured.size() == 6)
 		for index in captured.size():
-			assert(abs(captured[index] - captured[0] - offsets[index]) < 1e-9)
-		assert(abs(times[0] - captured[0] - origin) < 0.05, "MF4 start is not aligned with recording start")
+			if enabled:
+				assert(abs(captured[index] - captured[0] - offsets[index]) < 1e-6)
+		assert(abs(times[0] - captured[0]) < 1e-6, "Trace and MF4 time origins disagree")
 	decoder.close_capture()
+	# A failed recording must not reset the trace's time origin.
+	assert(not bridge.start_recording("Z:/nonexistent/cyder-recording", 0, "csv").is_empty())
+	assert(bridge.get_recent_can_msgs() == trace)
+	assert(bridge.set_timestamp_epoch(2).is_empty())
+	await create_timer(0.03).timeout
+	assert(bridge.start_recording(OS.get_environment("CYDERVIS_TIMESTAMP_DIRECTORY"), 0, "csv").is_empty())
+	assert(bridge.get_recent_can_msgs().get_slice(" ", 0).to_float() < 0.0, "Recording origin did not restart")
+	assert(bridge.stop_recording().is_empty())
 	bridge.close_bus()
+	assert(bridge.get_hardware_timestamp_status() == 0)
 	bridge.queue_free()
 	await process_frame
 	print("Hardware timestamp trace and MF4 tests passed")

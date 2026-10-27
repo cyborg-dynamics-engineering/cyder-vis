@@ -1,6 +1,87 @@
 //! Translate receive clocks by a fixed offset, preserving device-clock deltas.
 //! Hardware clocks are backend-specific microsecond counters, not UNIX time.
 
+/// Conversion from the canonical app timeline to a user-selected time origin.
+/// The MF4 header epoch plus its channel offset always gives the same UTC time.
+#[derive(Clone, Copy, Default)]
+pub struct Origin {
+    pub epoch_ns: u64,
+    pub offset_us: i128,
+}
+
+impl Origin {
+    pub fn timestamp_us(self, app_us: u64) -> i128 {
+        i128::from(app_us) + self.offset_us
+    }
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum Epoch {
+    System = 0,
+    #[default]
+    Application = 1,
+    Recording = 2,
+}
+
+impl TryFrom<i32> for Epoch {
+    type Error = &'static str;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::System),
+            1 => Ok(Self::Application),
+            2 => Ok(Self::Recording),
+            _ => Err("Select system epoch, app time or restart on recording."),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Timeline {
+    pub epoch: Epoch,
+    app_epoch_ns: u64,
+    recording_start_us: u64,
+}
+
+impl Timeline {
+    pub fn new(app_epoch_ns: u64) -> Self {
+        Self {
+            epoch: Epoch::Application,
+            app_epoch_ns: app_epoch_ns / 1000 * 1000,
+            recording_start_us: 0,
+        }
+    }
+
+    pub fn start_recording(&mut self, app_us: u64) {
+        self.recording_start_us = app_us;
+    }
+
+    pub fn origin(self) -> Origin {
+        match self.epoch {
+            Epoch::System => Origin {
+                epoch_ns: 0,
+                offset_us: i128::from(self.app_epoch_ns / 1000),
+            },
+            Epoch::Application => Origin {
+                epoch_ns: self.app_epoch_ns,
+                offset_us: 0,
+            },
+            Epoch::Recording => Origin {
+                epoch_ns: self
+                    .app_epoch_ns
+                    .saturating_add(self.recording_start_us.saturating_mul(1000)),
+                offset_us: -i128::from(self.recording_start_us),
+            },
+        }
+    }
+}
+
+pub fn format_seconds(us: i128) -> String {
+    let sign = if us < 0 { "-" } else { "" };
+    let us = us.unsigned_abs();
+    format!("{sign}{:04}.{:06}", us / 1_000_000, us % 1_000_000)
+}
+
 const RESET_BACKSTEP_US: u64 = 1_000_000;
 
 #[derive(Clone, Copy)]
@@ -50,6 +131,37 @@ impl Clock {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn epoch_selection_preserves_utc_and_hardware_spacing() {
+        let mut timeline = Timeline::new(1_710_000_000_123_456_789);
+        timeline.start_recording(3_600_000_000);
+        for mode in 0..=2 {
+            timeline.epoch = Epoch::try_from(mode).unwrap();
+            let origin = timeline.origin();
+            let stamp = origin.timestamp_us(3_600_001_000);
+            assert_eq!(
+                i128::from(origin.epoch_ns) + stamp * 1000,
+                1_710_003_600_124_456_000
+            );
+            assert_eq!(origin.timestamp_us(3_600_002_000) - stamp, 1000);
+        }
+        assert!(Epoch::try_from(3).is_err());
+        assert!(Epoch::try_from(-1).is_err());
+    }
+
+    #[test]
+    fn recording_origin_restarts_without_clipping_queued_samples() {
+        let mut timeline = Timeline::new(1_710_000_000_000_000_000);
+        timeline.epoch = Epoch::Recording;
+        assert_eq!(timeline.origin().timestamp_us(100), 100); // Before first recording.
+        timeline.start_recording(5000);
+        assert_eq!(timeline.origin().timestamp_us(4000), -1000);
+        assert_eq!(format_seconds(-1000), "-0000.001000");
+        timeline.start_recording(9000);
+        assert_eq!(timeline.origin().timestamp_us(9000), 0);
+        assert_eq!(format_seconds(1_710_000_000_123_456), "1710000000.123456");
+    }
 
     #[test]
     fn device_intervals_survive_host_and_processing_jitter() {

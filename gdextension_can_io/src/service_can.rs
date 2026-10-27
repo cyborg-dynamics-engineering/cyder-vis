@@ -6,6 +6,28 @@ use std::io;
 pub struct ServiceCan {
     client: ServiceClient,
     hardware_clock: Clock,
+    hardware_status: i32,
+}
+
+impl ServiceCan {
+    /// 0 hidden (unsupported/unknown), 1 disabled, 2 waiting, 3 active, 4 fallback.
+    pub fn hardware_timestamp_status(&self) -> i32 {
+        self.hardware_status
+    }
+
+    fn status_from_capability(status: &Status) -> i32 {
+        // A counter alone is insufficient: SLCAN timestamps may be software
+        // generated. gs_usb reports the firmware HW_TIMESTAMP feature bit;
+        // PCAN reports its device timestamp capability. Virtual clocks are not
+        // transceiver clocks, even if a service reports a contradictory flag.
+        if matches!(status.driver.as_str(), "gsusb" | "pcan")
+            && status.capabilities.hardware_timestamps == Some(true)
+        {
+            if status.timestamps { 2 } else { 1 }
+        } else {
+            0
+        }
+    }
 }
 
 impl CanInterface for ServiceCan {
@@ -13,12 +35,14 @@ impl CanInterface for ServiceCan {
         Ok(Self {
             client: ServiceClient::connect(name, Subscription::default()).await?,
             hardware_clock: Clock::default(),
+            hardware_status: 0,
         })
     }
 
     async fn get_bitrate(&mut self) -> io::Result<Option<u32>> {
         match self.client.request(Command::Status).await? {
             Reply::Status { status } if status.state == InterfaceState::Up => {
+                self.hardware_status = Self::status_from_capability(&status);
                 Ok(Some(status.bitrate))
             }
             Reply::Status { status } => Err(io::Error::new(
@@ -37,6 +61,13 @@ impl CanInterface for ServiceCan {
     async fn read_frame(&mut self) -> io::Result<CanFrame> {
         // next_event uses a channel receiver, so the UI's read timeout is cancellation safe.
         let event = self.client.next_event().await?;
+        if self.hardware_status >= 2 && event.direction == Direction::Rx {
+            self.hardware_status = if event.hardware_timestamp_us.is_some() {
+                3
+            } else {
+                4
+            };
+        }
         let mut frame = event.frame.to_can()?;
         frame.set_timestamp(Some(
             self.hardware_clock
@@ -76,16 +107,19 @@ mod tests {
             .unwrap();
         let peer = tokio::spawn(async move {
             pipe.connect().await.unwrap();
-            let status = Status {
+            let mut status = Status {
                 name: "test".into(),
-                driver: "virtual".into(),
+                driver: "gsusb".into(),
                 device: "auto".into(),
                 bitrate: 500_000,
                 desired_up: true,
                 state: InterfaceState::Up,
                 bus_state: BusState::ErrorActive,
                 timestamps: true,
-                capabilities: Capabilities::default(),
+                capabilities: Capabilities {
+                    hardware_timestamps: Some(true),
+                    ..Default::default()
+                },
                 counters: Counters::default(),
                 active_clients: 1,
                 last_error: None,
@@ -93,6 +127,27 @@ mod tests {
                 hardware_rx_error_counter: None,
                 hardware_tx_error_counter: None,
             };
+            assert_eq!(ServiceCan::status_from_capability(&status), 2);
+            for driver in ["gsusb", "pcan", "slcan", "virtual"] {
+                status.driver = driver.into();
+                for capability in [None, Some(false), Some(true)] {
+                    status.capabilities.hardware_timestamps = capability;
+                    for enabled in [false, true] {
+                        status.timestamps = enabled;
+                        let supported =
+                            ["gsusb", "pcan"].contains(&driver) && capability == Some(true);
+                        assert_eq!(
+                            ServiceCan::status_from_capability(&status),
+                            if supported {
+                                if enabled { 2 } else { 1 }
+                            } else {
+                                0
+                            }
+                        );
+                    }
+                }
+            }
+            status.driver = "gsusb".into();
             for _ in 0..3 {
                 let request: Request = read_message(&mut pipe).await.unwrap();
                 let reply = match request.command {
@@ -169,6 +224,7 @@ mod tests {
         });
         let mut client = ServiceCan::open(&name).await.unwrap();
         assert_eq!(client.get_bitrate().await.unwrap(), Some(500_000));
+        assert_eq!(client.hardware_timestamp_status(), 2);
         client
             .write_frame(CanFrame::new(0x123, &[1, 2, 3]).unwrap())
             .await
@@ -185,10 +241,15 @@ mod tests {
         assert_eq!(frame.id(), 0x456);
         assert_eq!(frame.data(), [4, 5]);
         assert_eq!(frame.timestamp(), Some(123_456));
+        assert_eq!(client.hardware_timestamp_status(), 4);
         for expected in [200_000, 201_000, 202_000, 202_500, 203_000] {
             assert_eq!(
                 client.read_frame().await.unwrap().timestamp(),
                 Some(expected)
+            );
+            assert_eq!(
+                client.hardware_timestamp_status(),
+                if expected == 202_500 { 4 } else { 3 }
             );
         }
         peer.await.unwrap();
