@@ -83,7 +83,6 @@ func _process(delta: float) -> void:
 
 func _update_interfaces(interfaces: Array) -> void:
 	setup.set_running_interfaces(interfaces)
-	_empty.visible = interfaces.is_empty()
 	var names: Array = []
 	var connected: String = can_bridge.get_interface() if can_bridge != null else ""
 	for interface: Dictionary in interfaces:
@@ -91,23 +90,24 @@ func _update_interfaces(interfaces: Array) -> void:
 		if name == connected and interface.state != "up":
 			connection.close_connection()
 			connected = ""
+		if interface.state != "up":
+			continue
 		names.append(name)
 		if not _rows.has(name):
 			_add_row(name)
 		var row: Dictionary = _rows[name]
 		row.name_label.text = setup._preferences.display_name(interface)
-		if interface.state != "up":
-			row.name_label.text += " (" + str(interface.state).capitalize() + ")"
 		row.name_label.tooltip_text = "%s\n%s\n%s: %s\n%s" % [row.name_label.text, name, interface.driver, interface.device, interface.get("error", "")]
 		row.bitrate.text = "%s bit/s" % interface.bitrate if interface.bitrate > 0 else "Bitrate: —"
 		var load: Variant = interface.get("bus_load")
 		row.bus_load.text = "%.2f%%" % float(load) if load != null else "—"
-		row.up = interface.state == "up"
-		row.stop.disabled = interface.state == "down"
+		row.up = true
+		row.stop.disabled = false
 	for name: String in _rows.keys():
 		if not names.has(name):
 			_rows[name].container.queue_free()
 			_rows.erase(name)
+	_empty.visible = names.is_empty()
 	_update_connection_buttons(connected)
 
 

@@ -147,7 +147,9 @@ just run
 CyderVis can start several servers and stops only the selected server from its
 row. Servers it starts are also stopped when CyderVis exits. For externally
 started servers, **Stop** brings the CAN interface down through the service API
-and leaves the external process running; its row shows **Down**. Server diagnostics
+and leaves the external process running. Its row disappears when the interface
+is down; use Add interface to start it again. Down, faulted and disconnected
+interfaces are excluded from the running-interface list. Server diagnostics
 are saved to `canserver_NAME.log` in the application's user-data directory. Use
 **Connect** on a running row to connect through crosscan's versioned service
 client. Linux continues to use SocketCAN directly.

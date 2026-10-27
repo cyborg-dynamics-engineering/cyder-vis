@@ -50,12 +50,16 @@ func _run() -> void:
 	assert(panel.setup._selection().is_empty()) # Do not restore a saved running adapter.
 	interfaces[0].state = "down"
 	panel._update_interfaces(interfaces)
+	assert(not panel._rows.has("Powertrain") and panel._rows.has("COM7"))
+	assert(not panel._empty.visible)
+	assert(panel.setup._interfaces.size() == 2) # Keep service metadata for restarting.
 	assert(not panel.setup._adapter.is_item_disabled(1))
 	assert(not panel.setup._adapter.get_item_tooltip(1).contains("Already running"))
 	panel.setup._adapter.select(1)
 	assert(panel.setup._selection().selector == "SERIAL/0")
 	interfaces[0].state = "up"
 	panel._update_interfaces(interfaces)
+	assert(panel._rows.has("Powertrain"))
 	assert(panel.setup._adapter.is_item_disabled(1))
 	assert(panel.setup._selection().is_empty()) # Clear a selection that starts running.
 	panel.setup._driver.select(1)
@@ -65,6 +69,17 @@ func _run() -> void:
 	assert(panel.setup._adapter.get_item_tooltip(1) == "Already running")
 	assert(not panel.setup._adapter.is_item_disabled(2))
 	assert(panel.setup._adapter.selected == 2) # Only the unused adapter can be auto-selected.
+	# A service process can remain alive while its hardware is down, faulted or
+	# disconnected. Those are available for setup, not running-interface rows.
+	for state: String in ["down", "faulted", "disconnected"]:
+		var inactive: Array = interfaces.duplicate(true)
+		for interface: Dictionary in inactive:
+			interface.state = state
+		panel._update_interfaces(inactive)
+		assert(panel._rows.is_empty() and panel._empty.visible, state)
+		assert(panel.setup._interfaces.size() == 2)
+	panel._update_interfaces(interfaces)
+	assert(panel._rows.size() == 2 and not panel._empty.visible)
 	panel._update_interfaces([])
 	assert(not panel.setup._adapter.is_item_disabled(1))
 	assert(panel._rows.is_empty() and panel._empty.visible)
