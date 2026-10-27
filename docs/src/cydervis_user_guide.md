@@ -113,6 +113,41 @@ Server diagnostics are saved to `canserver.log` in the application's user-data
 directory. With multiple gsusb adapters, supply a specific adapter/channel.
 Once the interface is ready, use **Start** to connect CyderVis.
 
+## Recording CSV or MF4
+
+On the Trace tab, choose a recording folder, **Raw frames**, **Decoded signals**
+or **Raw + decoded**, and the **CSV / MF4 radio toggle**. Connect to the CAN bus,
+then select **Start recording**. **Stop recording**, pausing the connection and
+closing the application finalize the files. Wait for finalization before opening
+an MF4 file. Both modes create separate raw and decoded files with unique names.
+The controls show their paths; existing recordings are never overwritten.
+
+Every received frame that matches the active trace filter is eligible for
+recording, including traffic beyond the trace's 100-frame display history.
+Applying a different trace filter changes subsequent recorded traffic. Decoded
+capture requires the loaded DBC. Unknown, remote and error frames, and frames with
+truncated or non-finite signals, do not produce decoded samples. Values are saved
+before display rounding, with their units.
+
+CSV raw columns contain timestamp in microseconds since app startup, interface,
+hex CAN ID, frame flags, DLC and hex bytes. Decoded CSV has one row per signal
+with message and signal names, value and unit. MF4 raw files use the standard CAN
+bus logging layout; decoded files contain time series named `Message.Signal`.
+MF4 time channels use seconds with a common file start time for both files.
+
+MF4 capture uses Python 3 with `python-can` and `asammdf`. Install them in the
+interpreter used by CyderVis:
+
+```text
+python -m pip install "python-can[mf4]>=4.6,<5" "asammdf>=8,<9"
+```
+
+Set `CYDERVIS_MF4_PYTHON` to a full Python executable path to use a virtual
+environment. A missing interpreter or dependency is reported when starting MF4
+capture. CSV recording has no Python dependency. MF4 diagnostics are saved next
+to the recording in a `*-mf4.log` file. MF4 uses temporary storage during capture
+and produces the final files on stop; close CyderVis normally to finalize them.
+
 ## Trace filters
 
 Use **Apply filter** on the Trace tab to select traffic with candump syntax. An
@@ -128,4 +163,3 @@ backend. An optional interface prefix such as `can0,123:7FF` is accepted.
 
 See the [candump manual](https://manpages.debian.org/testing/can-utils/candump.1.en.html)
 for ID, mask, inversion, error-mask and join semantics.
-

@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3 uid="uid://dno8ya28n0fu0"]
+[gd_scene load_steps=19 format=3 uid="uid://dno8ya28n0fu0"]
 
 [ext_resource type="Script" uid="uid://caee7k6af2fip" path="res://assets/main/set_min_window_size.gd" id="1_by4fb"]
 [ext_resource type="PackedScene" uid="uid://df463g67o2em3" path="res://assets/tables/receive_table/receive_table.tscn" id="1_ig7tw"]
@@ -17,6 +17,7 @@
 [ext_resource type="Script" path="res://assets/main/conversion_calculator.gd" id="12_calculator"]
 [ext_resource type="Script" path="res://assets/main/trace_controls.gd" id="13_trace"]
 [ext_resource type="Script" path="res://assets/main/interface_controls.gd" id="14_interface"]
+[ext_resource type="Script" path="res://assets/main/recording_controls.gd" id="15_recording"]
 
 [node name="Main" type="Node"]
 script = ExtResource("1_by4fb")
@@ -344,6 +345,11 @@ layout_mode = 2
 [node name="TraceControls" type="HBoxContainer" parent="Background/VSplitContainer/TabContainer/Trace/MarginContainer/VBoxContainer" node_paths=PackedStringArray("can_bridge")]
 layout_mode = 2
 script = ExtResource("13_trace")
+can_bridge = NodePath("../../../../../../../GodotCanBridge")
+
+[node name="RecordingControls" type="VBoxContainer" parent="Background/VSplitContainer/TabContainer/Trace/MarginContainer/VBoxContainer" node_paths=PackedStringArray("can_bridge")]
+layout_mode = 2
+script = ExtResource("15_recording")
 can_bridge = NodePath("../../../../../../../GodotCanBridge")
 
 [node name="TraceTextEdit" type="TextEdit" parent="Background/VSplitContainer/TabContainer/Trace/MarginContainer/VBoxContainer" node_paths=PackedStringArray("_can_bridge")]

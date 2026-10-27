@@ -1,6 +1,7 @@
 mod can_parser;
 mod dbc_transmit;
 mod interface_manager;
+mod recording;
 mod system_tools;
 mod trace_filter;
 
@@ -52,6 +53,7 @@ struct GodotCanBridge {
     trace_history: Arc<Mutex<VecDeque<CanFrame>>>,
     trace_filter: Arc<Mutex<TraceFilter>>,
     interface_manager: interface_manager::InterfaceManager,
+    recorder: Arc<Mutex<Option<recording::Recorder>>>,
 
     /// Base Godot class (Rust module will be implemented as a Node in Godot)
     base: Base<Node>,
@@ -86,6 +88,7 @@ impl INode for GodotCanBridge {
             trace_history: Arc::new(Mutex::new(VecDeque::new())),
             trace_filter: Arc::new(Mutex::new(TraceFilter::default())),
             interface_manager: interface_manager::InterfaceManager::default(),
+            recorder: Arc::new(Mutex::new(None)),
             base,
         }
     }
@@ -93,6 +96,58 @@ impl INode for GodotCanBridge {
 
 #[godot_api]
 impl GodotCanBridge {
+    #[func]
+    fn start_recording(&mut self, directory: String, mode: i32, format: String) -> String {
+        if !self.is_alive() {
+            return "Connect to a CAN interface before starting a recording.".into();
+        }
+        let mut recorder = self.runtime.block_on(self.recorder.lock());
+        if recorder.is_some() {
+            return "A recording is already running.".into();
+        }
+        match recording::Recorder::start(
+            std::path::Path::new(&directory),
+            mode,
+            &format,
+            self.can_parser.clone(),
+        ) {
+            Ok(value) => {
+                *recorder = Some(value);
+                String::new()
+            }
+            Err(error) => error,
+        }
+    }
+
+    #[func]
+    fn stop_recording(&mut self) -> String {
+        if let Some(mut recorder) = self.runtime.block_on(self.recorder.lock()).take() {
+            return recorder.finish().err().unwrap_or_default();
+        }
+        String::new()
+    }
+
+    #[func]
+    fn is_recording(&self) -> bool {
+        self.runtime.block_on(self.recorder.lock()).is_some()
+    }
+
+    #[func]
+    fn recording_files(&self) -> String {
+        self.runtime
+            .block_on(self.recorder.lock())
+            .as_ref()
+            .map(|recorder| {
+                recorder
+                    .paths
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default()
+    }
+
     #[func]
     fn dbc_transmit_definitions(&self) -> String {
         self.can_parser
@@ -229,6 +284,8 @@ impl GodotCanBridge {
         let closure_requested = Arc::clone(&self.closure_requested);
         let start_time = Arc::clone(&self.start_time);
         let trace_history = Arc::clone(&self.trace_history);
+        let trace_filter = Arc::clone(&self.trace_filter);
+        let recorder = Arc::clone(&self.recorder);
         self.read_handle = Some(tokio::spawn(async {
             read_can(
                 interface_name,
@@ -239,6 +296,8 @@ impl GodotCanBridge {
                 closure_requested,
                 start_time,
                 trace_history,
+                trace_filter,
+                recorder,
             )
             .await;
         }));
@@ -295,6 +354,10 @@ impl GodotCanBridge {
             godot_print!("CAN bus closed");
         } else {
             error_alert_godot("Attempted to close a nonexistent CAN connection".to_string());
+        }
+        let error = self.stop_recording();
+        if !error.is_empty() {
+            error_alert_godot(format!("Recording finalization failed: {error}"));
         }
     }
 
@@ -380,6 +443,8 @@ async fn read_can(
     closure_requested: Arc<Mutex<bool>>,
     start_time: Arc<Mutex<Instant>>,
     trace_history: Arc<Mutex<VecDeque<CanFrame>>>,
+    trace_filter: Arc<Mutex<TraceFilter>>,
+    recorder: Arc<Mutex<Option<recording::Recorder>>>,
 ) {
     // Select a specific CAN Socket implementation for the supported operating systems
     #[cfg(target_os = "linux")]
@@ -396,6 +461,7 @@ async fn read_can(
                 "Failed to open CAN device, check that {interface_name:?} is up"
             ));
             godot_error!("{err:?}");
+            finish_recording(&recorder).await;
             return;
         }
     };
@@ -411,6 +477,15 @@ async fn read_can(
     };
 
     loop {
+        {
+            let mut recording = recorder.lock().await;
+            if let Some(active) = recording.as_mut() {
+                if let Err(error) = active.flush_if_due() {
+                    recording.take();
+                    error_alert_godot(format!("Recording stopped: {error}"));
+                }
+            }
+        }
         // Process outgoing CAN messages
         {
             let mut frames_to_send = sending_queue.lock().await;
@@ -457,6 +532,19 @@ async fn read_can(
                 // Add to the recent CAN history
                 let mut frame_with_timestamp = frame.clone();
                 frame_with_timestamp.set_timestamp(Some(current_timestamp_us.try_into().unwrap()));
+
+                {
+                    let filter = trace_filter.lock().await.clone();
+                    let mut recording = recorder.lock().await;
+                    if let Some(active) = recording.as_mut() {
+                        if let Err(error) =
+                            active.record(&frame_with_timestamp, &interface_name, &filter)
+                        {
+                            recording.take();
+                            error_alert_godot(format!("Recording stopped: {error}"));
+                        }
+                    }
+                }
 
                 let mut trace_history_lock = trace_history.lock().await;
                 trace_history_lock.push_back(frame_with_timestamp);
@@ -522,6 +610,15 @@ async fn read_can(
                 error_alert_godot(format!("Received CAN error: {:?}", err));
                 break;
             }
+        }
+    }
+    finish_recording(&recorder).await;
+}
+
+async fn finish_recording(recorder: &Mutex<Option<recording::Recorder>>) {
+    if let Some(mut active) = recorder.lock().await.take() {
+        if let Err(error) = active.finish() {
+            error_alert_godot(format!("Recording finalization failed: {error}"));
         }
     }
 }

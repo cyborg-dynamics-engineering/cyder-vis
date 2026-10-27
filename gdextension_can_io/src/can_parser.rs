@@ -47,6 +47,36 @@ impl CanParser {
         self.dbc.as_ref()
     }
 
+    pub fn decode_for_recording(
+        &self,
+        frame: &CanFrame,
+    ) -> Option<(String, Vec<crate::recording::DecodedSignal>)> {
+        if frame.is_rtr() || frame.is_error() {
+            return None;
+        }
+        let dbc = self.dbc.as_ref()?;
+        let message = dbc
+            .messages
+            .iter()
+            .find(|message| message.id == dbc_helpers::get_message_id(frame))?;
+        let mut signals = Vec::new();
+        for signal in &message.signals {
+            if !self.signal_fits(message, signal, frame.data()) {
+                return None;
+            }
+            let value = self.signal_value(message, signal, frame.data());
+            if !value.is_finite() {
+                return None;
+            }
+            signals.push(crate::recording::DecodedSignal {
+                name: signal.name.clone(),
+                value,
+                unit: signal.unit.clone(),
+            });
+        }
+        Some((message.name.clone(), signals))
+    }
+
     pub fn new() -> Self {
         return Self { dbc: None };
     }
@@ -184,6 +214,51 @@ impl CanParser {
         signal: &can_dbc::Signal,
         bytes: &[u8],
     ) -> String {
+        if !self.signal_fits(message_info, signal, bytes) {
+            return "N/A".into();
+        }
+        let value = self.signal_value(message_info, signal, bytes);
+
+        let formatted_value = format!("{:.4}", value)
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string();
+
+        // Add asterix if values falls outside bounds
+        let formatted_value_with_bounds = format!(
+            "{}{}",
+            formatted_value,
+            match value < signal.min || value > signal.max {
+                true => "*",
+                false => "",
+            }
+        );
+        formatted_value_with_bounds
+    }
+
+    fn signal_fits(
+        &self,
+        message: &can_dbc::Message,
+        signal: &can_dbc::Signal,
+        bytes: &[u8],
+    ) -> bool {
+        let Some(dbc) = &self.dbc else {
+            return false;
+        };
+        let size = match dbc.extended_value_type_for_signal(message.id, &signal.name) {
+            Some(can_dbc::SignalExtendedValueType::IEEEfloat32Bit) => 32,
+            Some(can_dbc::SignalExtendedValueType::IEEEdouble64bit) => 64,
+            _ => signal.size,
+        };
+        size == signal.size && crate::dbc_transmit::bit_positions(signal, bytes.len()).is_ok()
+    }
+
+    fn signal_value(
+        &self,
+        message_info: &can_dbc::Message,
+        signal: &can_dbc::Signal,
+        bytes: &[u8],
+    ) -> f64 {
         let dbc = match &self.dbc {
             Some(table) => table,
             None => {
@@ -191,7 +266,7 @@ impl CanParser {
             }
         };
 
-        let value = match dbc
+        match dbc
             .extended_value_type_for_signal(message_info.id, signal.name.as_str())
             .unwrap_or(&can_dbc::SignalExtendedValueType::SignedOrUnsignedInteger)
         {
@@ -227,23 +302,7 @@ impl CanParser {
 
                 f64::from_bits(raw_value) * signal.factor + signal.offset
             }
-        };
-
-        let formatted_value = format!("{:.4}", value)
-            .trim_end_matches('0')
-            .trim_end_matches('.')
-            .to_string();
-
-        // Add asterix if values falls outside bounds
-        let formatted_value_with_bounds = format!(
-            "{}{}",
-            formatted_value,
-            match value < signal.min || value > signal.max {
-                true => "*",
-                false => "",
-            }
-        );
-        formatted_value_with_bounds
+        }
     }
 
     /// Deserialises and appends the raw byte data from the CAN frame to the Godot CAN entry
@@ -331,7 +390,7 @@ impl CanParser {
         let mut value = CanParser::extract_bits_u64(bytes, start_bit, length, byte_order) as i64;
 
         // Sign extend if the most significant bit of the extracted value is set (two's complement)
-        if value & (1 << (length - 1)) != 0 {
+        if length < 64 && value & (1 << (length - 1)) != 0 {
             value = value | (!0 << length);
         }
 
