@@ -71,7 +71,23 @@ To load a `.dbc` file:
 
 - **CyderVis doesn’t connect:**  
   Ensure the `canserver` is running and the interface name matches (e.g., `can0`).
-# Trace filters
+## Interface controls
+
+On the Interface tab, set the name and bitrate, then use **Bring up / Restart**.
+Pause the connection before changing an interface. On Linux this uses `ip` via
+`pkexec`; install iproute2 and polkit with a desktop authentication agent. For a
+virtual bus, enter a name such as `vcan0`, then choose **Create vcan**. Existing
+virtual buses can be restarted with **Virtual CAN** selected.
+
+On Windows, install win-can-utils with `canserver.exe` on PATH, choose the driver
+and optional adapter/channel, then use **Bring up / Restart**. This requires a
+version supporting `--name`. CyderVis manages the server it starts and can restart
+or stop it; an externally started server must be stopped in its own terminal.
+Server diagnostics are saved to `canserver.log` in the application's user-data
+directory. With multiple gsusb adapters, supply a specific adapter/channel.
+Once the interface is ready, use **Start** to connect CyderVis.
+
+## Trace filters
 
 Use **Apply filter** on the Trace tab to select traffic with candump syntax. An
 empty field shows all data frames. Comma-separated rules use OR; add `j` to use

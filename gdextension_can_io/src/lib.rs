@@ -1,4 +1,5 @@
 mod can_parser;
+mod interface_manager;
 mod system_tools;
 mod trace_filter;
 
@@ -49,6 +50,7 @@ struct GodotCanBridge {
     /// Holds the recent can frames with timestamps for trace
     trace_history: Arc<Mutex<VecDeque<CanFrame>>>,
     trace_filter: Arc<Mutex<TraceFilter>>,
+    interface_manager: interface_manager::InterfaceManager,
 
     /// Base Godot class (Rust module will be implemented as a Node in Godot)
     base: Base<Node>,
@@ -82,6 +84,7 @@ impl INode for GodotCanBridge {
             start_time: Arc::new(Mutex::new(Instant::now())),
             trace_history: Arc::new(Mutex::new(VecDeque::new())),
             trace_filter: Arc::new(Mutex::new(TraceFilter::default())),
+            interface_manager: interface_manager::InterfaceManager::default(),
             base,
         }
     }
@@ -92,6 +95,50 @@ impl GodotCanBridge {
     #[func]
     fn check_dependencies(&self) -> String {
         system_tools::can_utils_warning()
+    }
+
+    #[func]
+    fn manage_interface(
+        &mut self,
+        interface: String,
+        bitrate: u32,
+        virtual_bus: bool,
+        create: bool,
+        driver: String,
+        channel: String,
+        log: String,
+    ) -> String {
+        if self.is_alive() {
+            return "Pause the CAN connection before changing the interface.".into();
+        }
+        self.interface_manager
+            .start(
+                &interface,
+                bitrate,
+                virtual_bus,
+                create,
+                &driver,
+                &channel,
+                &log,
+            )
+            .err()
+            .unwrap_or_default()
+    }
+
+    #[func]
+    fn interface_operation_status(&mut self) -> String {
+        self.interface_manager.poll()
+    }
+
+    #[func]
+    fn stop_managed_server(&mut self) -> String {
+        if self.is_alive() {
+            return "Pause the CAN connection before stopping its server.".into();
+        }
+        self.interface_manager
+            .stop_server()
+            .err()
+            .unwrap_or_default()
     }
 
     #[func]

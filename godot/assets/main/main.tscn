@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3 uid="uid://dno8ya28n0fu0"]
+[gd_scene load_steps=18 format=3 uid="uid://dno8ya28n0fu0"]
 
 [ext_resource type="Script" uid="uid://caee7k6af2fip" path="res://assets/main/set_min_window_size.gd" id="1_by4fb"]
 [ext_resource type="PackedScene" uid="uid://df463g67o2em3" path="res://assets/tables/receive_table/receive_table.tscn" id="1_ig7tw"]
@@ -16,6 +16,7 @@
 [ext_resource type="Script" uid="uid://cay8qy6p443lm" path="res://assets/status_bar.gd" id="11_in5wb"]
 [ext_resource type="Script" path="res://assets/main/conversion_calculator.gd" id="12_calculator"]
 [ext_resource type="Script" path="res://assets/main/trace_controls.gd" id="13_trace"]
+[ext_resource type="Script" path="res://assets/main/interface_controls.gd" id="14_interface"]
 
 [node name="Main" type="Node"]
 script = ExtResource("1_by4fb")
@@ -209,6 +210,18 @@ on_label = "Frequency"
 off_label = "Period"
 receive_table = NodePath("../../../MarginContainer/ReceiveTable")
 transmit_table = NodePath("../../Transmit/TransmitTable")
+
+[node name="InterfaceControls" type="VBoxContainer" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("can_bridge", "interface_box", "pause_button")]
+layout_mode = 1
+anchor_right = 1.0
+offset_left = 320.0
+offset_top = 110.0
+offset_right = -20.0
+offset_bottom = 220.0
+script = ExtResource("14_interface")
+can_bridge = NodePath("../../../../../GodotCanBridge")
+interface_box = NodePath("../CanInterfaceBox")
+pause_button = NodePath("../PauseButton")
 
 [node name="Plot" type="Control" parent="Background/VSplitContainer/TabContainer"]
 visible = false
