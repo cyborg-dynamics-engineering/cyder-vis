@@ -5,8 +5,7 @@ use std::thread::JoinHandle;
 #[derive(Default)]
 pub struct InterfaceManager {
     job: Option<JoinHandle<Result<(), String>>>,
-    server: Option<Child>,
-    server_log: String,
+    servers: std::collections::HashMap<String, (Child, String)>,
 }
 
 pub fn linux_commands(
@@ -72,6 +71,10 @@ fn validate(interface: &str, bitrate: u32) -> Result<(), String> {
 }
 
 impl InterfaceManager {
+    pub fn owned_names(&self) -> Vec<String> {
+        self.servers.keys().cloned().collect()
+    }
+
     pub fn start(
         &mut self,
         interface: &str,
@@ -82,7 +85,14 @@ impl InterfaceManager {
         channel: &str,
         log: &str,
     ) -> Result<(), String> {
-        validate(interface, bitrate)?;
+        if cfg!(windows) {
+            crosscan::protocol::validate_name(interface).map_err(|e| e.to_string())?;
+            if bitrate == 0 || bitrate > 1_000_000 {
+                return Err("Bitrate must be 1–1000000 bit/s.".into());
+            }
+        } else {
+            validate(interface, bitrate)?;
+        }
         if self.job.is_some() {
             return Err("An interface operation is already in progress.".into());
         }
@@ -115,9 +125,11 @@ impl InterfaceManager {
             if !["gsusb", "slcan", "pcan"].contains(&driver) {
                 return Err("Select gsusb, slcan or pcan.".into());
             }
-            let executable = find_in_path("canserver.exe", &search)
-                .ok_or("Install win-can-utils and put canserver.exe on PATH.")?;
-            self.stop_server()?;
+            crosscan::protocol::validate_name(interface).map_err(|e| e.to_string())?;
+            let executable = crate::adapter_discovery::canserver_executable()?;
+            if self.servers.contains_key(interface) {
+                return Err("This interface is already started.".into());
+            }
             let output = std::fs::File::create(log)
                 .map_err(|e| format!("Cannot open canserver log: {e}"))?;
             let mut command = Command::new(executable);
@@ -129,7 +141,7 @@ impl InterfaceManager {
                 interface,
             ]);
             if !channel.trim().is_empty() {
-                command.args(["--channel", channel.trim()]);
+                command.args(["--device", channel.trim()]);
             }
             command
                 .stdin(Stdio::null())
@@ -140,8 +152,10 @@ impl InterfaceManager {
                 use std::os::windows::process::CommandExt;
                 command.creation_flags(0x08000000); // CREATE_NO_WINDOW
             }
-            self.server = Some(command.spawn().map_err(|e| e.to_string())?);
-            self.server_log = log.to_owned();
+            self.servers.insert(
+                interface.into(),
+                (command.spawn().map_err(|e| e.to_string())?, log.into()),
+            );
         } else {
             return Err("Interface management is supported on Windows and Linux.".into());
         }
@@ -152,34 +166,139 @@ impl InterfaceManager {
     pub fn poll(&mut self) -> String {
         if self.job.as_ref().is_some_and(|job| job.is_finished()) {
             return match self.job.take().unwrap().join() {
-                Ok(Ok(())) => "Interface is up. Click Start to connect.".into(),
+                Ok(Ok(())) => "Interface operation complete.".into(),
                 Ok(Err(error)) => format!("ERROR: {error}"),
                 Err(_) => "ERROR: Interface operation failed unexpectedly.".into(),
             };
         }
-        if let Some(server) = &mut self.server {
+        let mut exited = None;
+        for (name, (server, log)) in &mut self.servers {
             match server.try_wait() {
                 Ok(Some(status)) => {
-                    self.server = None;
-                    return format!(
-                        "ERROR: canserver exited ({status}). See {}. Check adapter selection, installed win-can-utils version and driver.",
-                        self.server_log
-                    );
+                    exited = Some((
+                        name.clone(),
+                        format!(
+                            "ERROR: canserver exited ({status}). See {}. Check adapter selection, installed win-can-utils version and driver.",
+                            log
+                        ),
+                    ));
+                    break;
                 }
                 Err(error) => return format!("ERROR: Cannot check canserver: {error}"),
                 _ => {}
             }
         }
+        if let Some((name, message)) = exited {
+            self.servers.remove(&name);
+            return message;
+        }
         String::new()
     }
 
     pub fn stop_server(&mut self) -> Result<(), String> {
-        if let Some(mut server) = self.server.take() {
+        for (_, (mut server, _)) in self.servers.drain() {
             if server.try_wait().map_err(|e| e.to_string())?.is_none() {
                 server.kill().map_err(|e| e.to_string())?;
             }
             server.wait().map_err(|e| e.to_string())?;
         }
+        Ok(())
+    }
+
+    pub fn stop_named(&mut self, name: &str) -> Result<(), String> {
+        if let Some((mut server, _)) = self.servers.remove(name) {
+            if server.try_wait().map_err(|e| e.to_string())?.is_none() {
+                server.kill().map_err(|e| e.to_string())?;
+            }
+            server.wait().map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        #[cfg(windows)]
+        {
+            self.set_up(name, false, None)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            validate(name, 1)?;
+            if self.job.is_some() {
+                return Err("An interface operation is already running.".into());
+            }
+            let search = std::env::var_os("PATH").unwrap_or_default();
+            let ip = find_in_path("ip", &search).ok_or("Install iproute2.")?;
+            let pkexec = find_in_path("pkexec", &search).ok_or("Install polkit.")?;
+            let name = name.to_owned();
+            self.job = Some(std::thread::spawn(move || {
+                let output = Command::new(pkexec)
+                    .arg("--disable-internal-agent")
+                    .arg(ip)
+                    .args(["link", "set", "dev", &name, "down"])
+                    .output()
+                    .map_err(|e| e.to_string())?;
+                if output.status.success() {
+                    Ok(())
+                } else {
+                    Err(String::from_utf8_lossy(&output.stderr).into_owned())
+                }
+            }));
+            Ok(())
+        }
+    }
+
+    #[cfg(windows)]
+    pub fn set_up(&mut self, name: &str, up: bool, bitrate: Option<u32>) -> Result<(), String> {
+        if bitrate.is_some_and(|rate| rate == 0 || rate > 1_000_000) {
+            return Err("Bitrate must be 1–1000000 bit/s.".into());
+        }
+        if self.job.is_some() {
+            return Err("An interface operation is already running.".into());
+        }
+        let name = name.to_owned();
+        self.job = Some(std::thread::spawn(move || {
+            tokio::runtime::Runtime::new()
+                .map_err(|e| e.to_string())?
+                .block_on(async {
+                    use crosscan::{protocol::*, service::ServiceClient};
+                    let client = ServiceClient::connect(
+                        &name,
+                        Subscription {
+                            receive: false,
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+                    if let Some(rate) = bitrate {
+                        client
+                            .request(Command::Configure {
+                                bitrate: Some(rate),
+                                timestamps: None,
+                            })
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    match client
+                        .request(Command::SetUp { up })
+                        .await
+                        .map_err(|e| e.to_string())?
+                    {
+                        Reply::Ok => Ok(()),
+                        Reply::Status { status }
+                            if status.state
+                                == if up {
+                                    InterfaceState::Up
+                                } else {
+                                    InterfaceState::Down
+                                } =>
+                        {
+                            Ok(())
+                        }
+                        Reply::Status { status } => Err(status
+                            .last_error
+                            .unwrap_or_else(|| format!("Interface is {:?}", status.state))),
+                        _ => Err("Unexpected service reply.".into()),
+                    }
+                })
+        }));
         Ok(())
     }
 }

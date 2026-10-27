@@ -3,7 +3,6 @@ class_name PauseButton
 
 @export_category("Node References")
 @export var _can_bridge: GodotCanBridge
-@export var _interface_box: LineEdit
 @export var _tab_container: TabContainer
 @export var _receive_table: ReceiveTable
 @export var _dbc_line_edit: LineEdit
@@ -15,10 +14,6 @@ var _is_paused: bool
 
 
 func _ready() -> void:
-	# Have the CAN interface box be the default focus on startup
-	_interface_box.grab_focus()
-
-	self.pressed.connect(_button_pressed)
 	_is_paused = true
 	_update_text()
 	_update_tab_selectability()
@@ -28,6 +23,7 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if not is_paused():
 		if not _can_bridge.is_alive():
+			_can_bridge.close_bus()
 			_toggle_pause()
 
 
@@ -41,21 +37,22 @@ func close_connection() -> void:
 		_toggle_pause()
 
 
-func _button_pressed() -> void:
+func connect_interface(interface_name: String) -> bool:
 	# Handle CAN bus interaction
 	if _is_paused:
 		var dbc_load_success: bool = _can_bridge.load_dbc_file(_dbc_line_edit.text)
 		if not dbc_load_success:
-			return
+			return false
 		_transmit_table.refresh_dbc()
 
-		var can_up_success: bool = _can_bridge.configure_bus(_interface_box.text)
+		var can_up_success: bool = _can_bridge.configure_bus(interface_name)
 		if not can_up_success:
-			return
+			return false
 	else:
-		_can_bridge.close_bus()
+		return false
 
 	_toggle_pause()
+	return true
 
 
 # Toggle the paused state and update the button text

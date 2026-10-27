@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3 uid="uid://dno8ya28n0fu0"]
+[gd_scene load_steps=20 format=3 uid="uid://dno8ya28n0fu0"]
 
 [ext_resource type="Script" uid="uid://caee7k6af2fip" path="res://assets/main/set_min_window_size.gd" id="1_by4fb"]
 [ext_resource type="PackedScene" uid="uid://df463g67o2em3" path="res://assets/tables/receive_table/receive_table.tscn" id="1_ig7tw"]
@@ -18,6 +18,8 @@
 [ext_resource type="Script" path="res://assets/main/trace_controls.gd" id="13_trace"]
 [ext_resource type="Script" path="res://assets/main/interface_controls.gd" id="14_interface"]
 [ext_resource type="Script" path="res://assets/main/recording_controls.gd" id="15_recording"]
+
+[ext_resource type="Script" path="res://assets/main/running_interfaces.gd" id="16_interfaces"]
 
 [node name="Main" type="Node"]
 script = ExtResource("1_by4fb")
@@ -69,7 +71,7 @@ time_format_button = NodePath("../../TabContainer/Interface/TimeFormatButton")
 context_menu = NodePath("../../../ContextMenu")
 
 [node name="TabContainer" type="TabContainer" parent="Background/VSplitContainer"]
-custom_minimum_size = Vector2(0, 260)
+custom_minimum_size = Vector2(0, 380)
 layout_mode = 2
 current_tab = 0
 
@@ -77,30 +79,8 @@ current_tab = 0
 layout_mode = 2
 metadata/_tab_index = 0
 
-[node name="CanInterfaceBox" type="LineEdit" parent="Background/VSplitContainer/TabContainer/Interface"]
-layout_mode = 1
-anchors_preset = -1
-offset_left = 150.0
-offset_top = 20.0
-offset_right = 276.0
-offset_bottom = 51.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "can0"
-
-[node name="CanInterfaceLabel" type="Label" parent="Background/VSplitContainer/TabContainer/Interface"]
-layout_mode = 1
-anchors_preset = -1
-offset_left = 20.0
-offset_top = 20.0
-offset_right = 132.0
-offset_bottom = 43.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "CAN Interface:"
-vertical_alignment = 1
-
-[node name="PauseButton" type="Button" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("_can_bridge", "_interface_box", "_tab_container", "_receive_table", "_dbc_line_edit", "_dbc_open_button", "_status_bar", "_transmit_table")]
+[node name="PauseButton" type="Button" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("_can_bridge", "_tab_container", "_receive_table", "_dbc_line_edit", "_dbc_open_button", "_status_bar", "_transmit_table")]
+visible = false
 layout_mode = 1
 anchors_preset = -1
 offset_left = 302.0
@@ -111,7 +91,6 @@ grow_horizontal = 2
 text = "Start"
 script = ExtResource("3_xwkvk")
 _can_bridge = NodePath("../../../../../GodotCanBridge")
-_interface_box = NodePath("../CanInterfaceBox")
 _tab_container = NodePath("../..")
 _receive_table = NodePath("../../../MarginContainer/ReceiveTable")
 _dbc_line_edit = NodePath("../DbcFileBox")
@@ -122,18 +101,18 @@ _transmit_table = NodePath("../../Transmit/TransmitTable")
 [node name="DbcFileBox" type="LineEdit" parent="Background/VSplitContainer/TabContainer/Interface"]
 layout_mode = 1
 offset_left = 150.0
-offset_top = 67.0
+offset_top = 195.0
 offset_right = 550.0
-offset_bottom = 98.0
+offset_bottom = 226.0
 placeholder_text = "No DBC file"
 
 [node name="DbcFileLabel" type="Label" parent="Background/VSplitContainer/TabContainer/Interface"]
 layout_mode = 1
 anchors_preset = -1
 offset_left = 63.0
-offset_top = 70.0
+offset_top = 198.0
 offset_right = 134.0
-offset_bottom = 93.0
+offset_bottom = 221.0
 grow_horizontal = 2
 grow_vertical = 2
 text = "DBC File:	"
@@ -141,9 +120,9 @@ text = "DBC File:	"
 [node name="DbcFileButton" type="Button" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("_can_bridge", "_dbc_file_box", "_receive_table", "_transmit_table")]
 layout_mode = 1
 offset_left = 570.0
-offset_top = 67.0
+offset_top = 195.0
 offset_right = 650.0
-offset_bottom = 98.0
+offset_bottom = 226.0
 text = "Open"
 script = ExtResource("5_by4fb")
 _can_bridge = NodePath("../../../../../GodotCanBridge")
@@ -154,17 +133,17 @@ _transmit_table = NodePath("../../Transmit/TransmitTable")
 [node name="CanIdFormatLabel" type="Label" parent="Background/VSplitContainer/TabContainer/Interface"]
 layout_mode = 0
 offset_left = 32.0
-offset_top = 110.0
+offset_top = 238.0
 offset_right = 151.0
-offset_bottom = 134.0
+offset_bottom = 262.0
 text = "CAN ID Format:"
 
 [node name="CanIdFormatButton" type="Button" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("receive_table", "transmit_table")]
 layout_mode = 1
 offset_left = 165.0
-offset_top = 108.0
+offset_top = 236.0
 offset_right = 292.0
-offset_bottom = 139.0
+offset_bottom = 267.0
 text = "Hexadecimal"
 script = ExtResource("5_irre0")
 on_label = "Hexadecimal"
@@ -175,17 +154,17 @@ transmit_table = NodePath("../../Transmit/TransmitTable")
 [node name="CanDataFormatLabel" type="Label" parent="Background/VSplitContainer/TabContainer/Interface"]
 layout_mode = 0
 offset_left = 13.0
-offset_top = 145.0
+offset_top = 273.0
 offset_right = 152.0
-offset_bottom = 169.0
+offset_bottom = 297.0
 text = "CAN Data Format:"
 
 [node name="CanDataFormatButton" type="Button" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("receive_table", "transmit_table")]
 layout_mode = 1
 offset_left = 165.0
-offset_top = 143.0
+offset_top = 271.0
 offset_right = 292.0
-offset_bottom = 174.0
+offset_bottom = 302.0
 text = "Hexadecimal"
 script = ExtResource("5_irre0")
 on_label = "Hexadecimal"
@@ -196,17 +175,17 @@ transmit_table = NodePath("../../Transmit/TransmitTable")
 [node name="TimeFormatLabel" type="Label" parent="Background/VSplitContainer/TabContainer/Interface"]
 layout_mode = 0
 offset_left = 50.0
-offset_top = 180.0
+offset_top = 308.0
 offset_right = 161.00002
-offset_bottom = 204.0
+offset_bottom = 332.0
 text = "Time Format:"
 
 [node name="TimeFormatButton" type="Button" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("receive_table", "transmit_table")]
 layout_mode = 1
 offset_left = 165.0
-offset_top = 178.0
+offset_top = 306.0
 offset_right = 292.0
-offset_bottom = 209.0
+offset_bottom = 337.0
 text = "Frequency"
 script = ExtResource("5_irre0")
 on_label = "Frequency"
@@ -214,17 +193,47 @@ off_label = "Period"
 receive_table = NodePath("../../../MarginContainer/ReceiveTable")
 transmit_table = NodePath("../../Transmit/TransmitTable")
 
-[node name="InterfaceControls" type="VBoxContainer" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("can_bridge", "interface_box", "pause_button")]
+[node name="RunningInterfaces" type="VBoxContainer" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("can_bridge", "connection", "setup", "setup_dialog")]
 layout_mode = 1
 anchor_right = 1.0
-offset_left = 320.0
-offset_top = 110.0
+offset_left = 20.0
+offset_top = 10.0
 offset_right = -20.0
-offset_bottom = 220.0
-script = ExtResource("14_interface")
+offset_bottom = 178.0
+script = ExtResource("16_interfaces")
 can_bridge = NodePath("../../../../../GodotCanBridge")
-interface_box = NodePath("../CanInterfaceBox")
-pause_button = NodePath("../PauseButton")
+connection = NodePath("../PauseButton")
+setup = NodePath("../SetupDialog/MarginContainer/InterfaceControls")
+setup_dialog = NodePath("../SetupDialog")
+
+[node name="SetupDialog" type="Window" parent="Background/VSplitContainer/TabContainer/Interface"]
+title = "Start CAN interface"
+visible = false
+size = Vector2i(680, 330)
+min_size = Vector2i(600, 330)
+unresizable = false
+transient = true
+exclusive = true
+wrap_controls = false
+theme = ExtResource("2_3wy1v")
+
+[node name="MarginContainer" type="MarginContainer" parent="Background/VSplitContainer/TabContainer/Interface/SetupDialog"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = -12.0
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="InterfaceControls" type="VBoxContainer" parent="Background/VSplitContainer/TabContainer/Interface/SetupDialog/MarginContainer" node_paths=PackedStringArray("can_bridge")]
+layout_mode = 2
+script = ExtResource("14_interface")
+can_bridge = NodePath("../../../../../../../GodotCanBridge")
 
 [node name="Plot" type="Control" parent="Background/VSplitContainer/TabContainer"]
 visible = false

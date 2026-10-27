@@ -1,7 +1,11 @@
+mod adapter_discovery;
 mod can_parser;
 mod dbc_transmit;
 mod interface_manager;
+mod interface_registry;
 mod recording;
+#[cfg(windows)]
+mod service_can;
 mod system_tools;
 mod trace_filter;
 
@@ -53,6 +57,8 @@ struct GodotCanBridge {
     trace_history: Arc<Mutex<VecDeque<CanFrame>>>,
     trace_filter: Arc<Mutex<TraceFilter>>,
     interface_manager: interface_manager::InterfaceManager,
+    adapter_discovery: adapter_discovery::AdapterDiscovery,
+    interface_registry: interface_registry::InterfaceRegistry,
     recorder: Arc<Mutex<Option<recording::Recorder>>>,
 
     /// Base Godot class (Rust module will be implemented as a Node in Godot)
@@ -88,6 +94,8 @@ impl INode for GodotCanBridge {
             trace_history: Arc::new(Mutex::new(VecDeque::new())),
             trace_filter: Arc::new(Mutex::new(TraceFilter::default())),
             interface_manager: interface_manager::InterfaceManager::default(),
+            adapter_discovery: adapter_discovery::AdapterDiscovery::default(),
+            interface_registry: interface_registry::InterfaceRegistry::default(),
             recorder: Arc::new(Mutex::new(None)),
             base,
         }
@@ -176,6 +184,63 @@ impl GodotCanBridge {
     }
 
     #[func]
+    fn scan_adapters(&mut self, driver: String) -> String {
+        self.adapter_discovery
+            .start(driver)
+            .err()
+            .unwrap_or_default()
+    }
+
+    #[func]
+    fn poll_adapter_scan(&mut self) -> String {
+        self.adapter_discovery.poll()
+    }
+
+    #[func]
+    fn running_interfaces(&mut self) -> String {
+        serde_json::to_string(&self.interface_registry.snapshot(&self.runtime)).unwrap()
+    }
+
+    #[func]
+    fn interface_service_name(&mut self, display_name: String, identity: String) -> String {
+        let mut occupied = self
+            .interface_registry
+            .snapshot(&self.runtime)
+            .into_iter()
+            .map(|interface| interface.name)
+            .collect::<Vec<_>>();
+        occupied.extend(self.interface_manager.owned_names());
+        interface_registry::service_name(&display_name, &identity, &occupied)
+    }
+
+    #[func]
+    fn stop_interface(&mut self, name: String) -> String {
+        if self.is_alive() && self.interface == name {
+            self.close_bus();
+        }
+        self.interface_manager
+            .stop_named(&name)
+            .err()
+            .unwrap_or_default()
+    }
+
+    #[func]
+    fn resume_interface(&mut self, name: String, bitrate: u32) -> String {
+        #[cfg(windows)]
+        {
+            self.interface_manager
+                .set_up(&name, true, Some(bitrate))
+                .err()
+                .unwrap_or_default()
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (name, bitrate);
+            "Use Start to bring this interface up.".into()
+        }
+    }
+
+    #[func]
     fn manage_interface(
         &mut self,
         interface: String,
@@ -186,9 +251,6 @@ impl GodotCanBridge {
         channel: String,
         log: String,
     ) -> String {
-        if self.is_alive() {
-            return "Pause the CAN connection before changing the interface.".into();
-        }
         self.interface_manager
             .start(
                 &interface,
@@ -252,6 +314,18 @@ impl GodotCanBridge {
 
     #[func]
     fn configure_bus(&mut self, interface_name: String) -> bool {
+        if self.is_alive() {
+            return false;
+        }
+        if let Some(handle) = self.read_handle.take() {
+            let _ = self.runtime.block_on(handle);
+        }
+        *self.runtime.block_on(self.closure_requested.lock()) = false;
+        self.runtime.block_on(self.sending_queue.lock()).clear();
+        if self.interface != interface_name {
+            self.runtime.block_on(self.can_entries.lock()).clear();
+            self.runtime.block_on(self.trace_history.lock()).clear();
+        }
         let warning = self.check_dependencies();
         if !warning.is_empty() {
             error_alert_godot(warning);
@@ -454,7 +528,7 @@ async fn read_can(
     use crosscan::lin_can::LinuxCan as CanSocket;
 
     #[cfg(target_os = "windows")]
-    use crosscan::win_can::WindowsCan as CanSocket;
+    use crate::service_can::ServiceCan as CanSocket;
 
     // Open async CAN socket
     let mut socket = match CanSocket::open(&interface_name).await {

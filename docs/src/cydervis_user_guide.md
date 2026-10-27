@@ -6,9 +6,9 @@
 
 ## Connect and Receive Data in CyderVis
 
-1. In **CyderVis**, locate the **CAN Interface** input field.  
-2. Verify that the interface name matches the one brought up in the previous step (default is `can0`).  
-3. Click **Start** to begin receiving data from the CAN adapter.
+1. Open the **Interface** tab to see running CAN interfaces, their configured bitrate and estimated bus loading.
+2. If your device is not running, choose **Add interface…**, select its adapter and bitrate, then click **Start** in the popup.
+3. Click **Connect** on its row to begin receiving frames. Only one interface can be connected at a time; use **Disconnect** before selecting another.
 
 If other devices are active on the bus, incoming CAN frames will begin streaming into CyderVis and appear in the viewing table.
 
@@ -70,7 +70,7 @@ To load a `.dbc` file:
 ## Troubleshooting
 
 - **CyderVis doesn’t connect:**  
-  Ensure the `canserver` is running and the interface name matches (e.g., `can0`).
+  Ensure the interface is up in the running-interface list. Check the adapter selection and its canserver log if startup fails.
 ## Transmit messages from the DBC
 
 Load the same DBC used for decoding on the Interface tab, then select **Add DBC
@@ -99,19 +99,58 @@ Ranges with equal minimum and maximum are treated as unspecified.
 
 ## Interface controls
 
-On the Interface tab, set the name and bitrate, then use **Bring up / Restart**.
-Pause the connection before changing an interface. On Linux this uses `ip` via
-`pkexec`; install iproute2 and polkit with a desktop authentication agent. For a
-virtual bus, enter a name such as `vcan0`, then choose **Create vcan**. Existing
-virtual buses can be restarted with **Virtual CAN** selected.
+The Interface tab lists running interfaces with their bitrate, estimated bus
+loading, **Connect / Disconnect** and **Stop** controls. Disconnecting leaves the
+interface running. Stopping the connected interface disconnects it first. Other
+interfaces continue running. Bus loading is observed independently of the active
+connection, uses an estimate of classic CAN frame sizes and bit stuffing, and
+shows **—** while the first measurement is pending or the bitrate is unknown.
 
-On Windows, install win-can-utils with `canserver.exe` on PATH, choose the driver
-and optional adapter/channel, then use **Bring up / Restart**. This requires a
-version supporting `--name`. CyderVis manages the server it starts and can restart
-or stop it; an externally started server must be stopped in its own terminal.
-Server diagnostics are saved to `canserver.log` in the application's user-data
-directory. With multiple gsusb adapters, supply a specific adapter/channel.
-Once the interface is ready, use **Start** to connect CyderVis.
+Choose **Add interface…** to open the bring-up popup. Its single **Start** button
+is disabled when the selected interface is already up; hover it to see why. On
+Linux, select a SocketCAN device or **Create virtual CAN** for the next available
+`vcanN` name. Interface changes use `ip` via `pkexec`; install iproute2 and polkit
+with a desktop authentication agent.
+
+On Windows, use current win-can-utils with protocol v1, `--list-adapters`, `--device`
+and `--name` support. Select **gsusb**, **slcan** or **pcan**, choose a device from
+the dropdown, then click **Start**. SLCAN lists the available COM ports;
+gsusb lists connected USB adapter interfaces, including unavailable adapters.
+PCAN lists attached USB, PCI and LAN channels through PCAN-Basic; install the PEAK
+driver and matching-architecture `PCANBasic.dll`. Use **Refresh** after plugging in
+or removing an adapter. Multiple devices require an explicit choice. Busy devices
+can be inspected but cannot be brought up until their owning server is stopped.
+
+For gsusb and PCAN, enter an **Adapter nickname** and click **Save name**. Clear
+and save to remove it. Names and selections are stored in
+`user://adapter_preferences.cfg` and survive application restarts and reboots.
+gsusb names follow the serial number and USB interface, even if the USB address
+changes. PCAN names follow the hardware GUID and controller where supported, or
+a unique configured PCAN device ID and controller. On older PCAN hardware without
+a GUID, assign a unique device ID using PEAK tools first. Missing, default or
+duplicate identities cannot be nicknamed safely; the UI explains how to resolve
+this. A missing saved adapter is never silently replaced by a different device.
+The running-interface list uses the same label as the adapter dropdown, including
+its nickname and device details. New service names use the nickname where present,
+otherwise the device name (or COM port for SLCAN). Spaces and other characters are
+converted to underscores for crosscan's pipe names; colliding names get a suffix.
+
+CyderVis checks `CYDERVIS_CANSERVER` for an explicit executable path, then an
+adjacent `win-can-utils/target/debug/canserver.exe` when running from a source
+checkout, then PATH. For example, in PowerShell:
+
+```powershell
+$env:CYDERVIS_CANSERVER = 'D:\git\win-can-utils\target\debug\canserver.exe'
+just run
+```
+
+CyderVis can start several servers and stops only the selected server from its
+row. Servers it starts are also stopped when CyderVis exits. For externally
+started servers, **Stop** brings the CAN interface down through the service API
+and leaves the external process running; its row shows **Down**. Server diagnostics
+are saved to `canserver_NAME.log` in the application's user-data directory. Use
+**Connect** on a running row to connect through crosscan's versioned service
+client. Linux continues to use SocketCAN directly.
 
 ## Recording CSV or MF4
 

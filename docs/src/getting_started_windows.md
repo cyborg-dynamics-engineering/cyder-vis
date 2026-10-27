@@ -34,14 +34,21 @@ Once launched, the **CyderVis** window will open:
 
 ## Step 3: Start a CAN Server
 
-With your USB CAN adapter connected, start a CAN server using **win-can-utils**:
+With your USB CAN adapter connected, choose **Add interface…** on CyderVis's
+Interface tab. Select **gsusb**, the adapter and its bitrate, then click **Start**.
+Its row appears in the interface list; click **Connect** to receive frames.
+Use **Disconnect** to end the connection, or **Stop** to stop the interface.
+
+You can also start an external CAN server using current **win-can-utils**:
 
 ```bash
 # Example: start a server for a gsusb (candleLight) device with a bitrate of 1 Mbps
-canserver gsusb -b 1000000
+canserver gsusb --name can0 -b 1000000
 ```
 
-This will start the CAN interface (usually named `can0` by default).
+This starts `can0`, which CyderVis discovers automatically. With multiple adapters,
+use `canserver gsusb --list-adapters` and supply `--device SERIAL/0` when starting
+the server. The build must support protocol v1, adapter listing and named devices.
 
 ![Start canserver](images/start_canserver.png)
 

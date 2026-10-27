@@ -2,7 +2,7 @@
 extends Node
 
 const MIN_X: int = 700
-const MIN_Y: int = 400
+const MIN_Y: int = 560
 
 
 func _ready() -> void:
