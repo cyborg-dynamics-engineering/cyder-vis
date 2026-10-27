@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3 uid="uid://dno8ya28n0fu0"]
+[gd_scene load_steps=16 format=3 uid="uid://dno8ya28n0fu0"]
 
 [ext_resource type="Script" uid="uid://caee7k6af2fip" path="res://assets/main/set_min_window_size.gd" id="1_by4fb"]
 [ext_resource type="PackedScene" uid="uid://df463g67o2em3" path="res://assets/tables/receive_table/receive_table.tscn" id="1_ig7tw"]
@@ -14,6 +14,7 @@
 [ext_resource type="PackedScene" uid="uid://iyen1raq2l20" path="res://assets/tables/context_menu/context_menu.tscn" id="10_irre0"]
 [ext_resource type="Script" uid="uid://dnrrwnrmvjxvr" path="res://assets/alert_handler.gd" id="11_bsumw"]
 [ext_resource type="Script" uid="uid://cay8qy6p443lm" path="res://assets/status_bar.gd" id="11_in5wb"]
+[ext_resource type="Script" path="res://assets/main/conversion_calculator.gd" id="12_calculator"]
 
 [node name="Main" type="Node"]
 script = ExtResource("1_by4fb")
@@ -279,6 +280,17 @@ grow_vertical = 0
 text = "Add New"
 script = ExtResource("9_by4fb")
 transmit_table = NodePath("../TransmitTable")
+
+[node name="ConversionCalculator" type="Button" parent="Background/VSplitContainer/TabContainer/Transmit"]
+layout_mode = 1
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 160.0
+offset_top = -67.0
+offset_right = 340.0
+offset_bottom = -17.0
+text = "Float32 to hex"
+script = ExtResource("12_calculator")
 
 [node name="Trace" type="Control" parent="Background/VSplitContainer/TabContainer"]
 visible = false
