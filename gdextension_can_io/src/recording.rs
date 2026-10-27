@@ -1,4 +1,6 @@
 mod mf4;
+pub(crate) mod reader;
+mod viewer;
 
 use crate::{can_parser::CanParser, trace_filter::TraceFilter};
 use crosscan::can::CanFrame;
@@ -319,6 +321,46 @@ mod tests {
             )
             .unwrap();
         recorder.finish().unwrap();
+        let cancelled = std::sync::atomic::AtomicBool::new(false);
+        let mut dbc_decoder = CanParser::new();
+        dbc_decoder
+            .open_dbc(dbc_path.to_str().unwrap().into())
+            .unwrap();
+        let mut raw_capture = reader::Capture::open(&recorder.paths[0], &cancelled).unwrap();
+        assert_eq!(
+            raw_capture
+                .info()
+                .groups
+                .iter()
+                .map(|g| g.records)
+                .sum::<u64>(),
+            6013
+        );
+        let page = raw_capture.page(0, 0, 1, &dbc_decoder, &cancelled).unwrap();
+        assert_eq!(page.rows[0][2], "10302");
+        assert_eq!(page.rows[0][5], "6F 12 83 3A 0B 01 00 00");
+        assert!(page.rows[0][6].contains("SetComplementaryFilter.odr = 11"));
+        assert_eq!(
+            raw_capture
+                .page(1, 5, 500, &dbc_decoder, &cancelled)
+                .unwrap()
+                .rows[0][1],
+            "sensor °C / bus 1"
+        );
+        let mut decoded_capture = reader::Capture::open(&recorder.paths[1], &cancelled).unwrap();
+        assert_eq!(decoded_capture.info().groups[0].records, 6000);
+        let page = decoded_capture
+            .page(0, 5999, 500, &dbc_decoder, &cancelled)
+            .unwrap();
+        assert_eq!(page.rows.len(), 1);
+        assert_eq!(page.rows[0][2], "11");
+        assert!(
+            decoded_capture.info().groups[1]
+                .columns
+                .contains(&"Auxiliary.temperature (°C)".into())
+        );
+        drop(raw_capture);
+        drop(decoded_capture);
         if let Some(python) = std::env::var_os("CYDERVIS_MF4_VERIFY_PYTHON") {
             let output = Command::new(python)
                 .arg("tests/verify_mf4.py")

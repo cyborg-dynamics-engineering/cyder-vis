@@ -10,6 +10,7 @@ var _mf4: CheckBox
 var _start: Button
 var _stop: Button
 var _browse: Button
+var _open_capture: Button
 var _status: Label
 var _was_recording: bool = false
 
@@ -51,6 +52,11 @@ func _ready() -> void:
 	_stop.text = "Stop recording"
 	_stop.pressed.connect(_stop_recording)
 	options.add_child(_stop)
+	_open_capture = Button.new()
+	_open_capture.text = "Open MF4…"
+	_open_capture.tooltip_text = "View a saved capture's frames or decoded signals."
+	_open_capture.pressed.connect(_view_capture)
+	options.add_child(_open_capture)
 	_status = Label.new()
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(_status)
@@ -93,6 +99,13 @@ func _start_recording() -> void:
 		return
 	_status.text = "Recording: " + can_bridge.recording_files().replace("\n", " | ")
 	_status.tooltip_text = can_bridge.recording_files()
+
+
+func _view_capture() -> void:
+	var viewer := Mf4Viewer.new()
+	add_child(viewer)
+	viewer.popup_centered()
+	viewer._choose_capture()
 
 
 func _stop_recording() -> void:

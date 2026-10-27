@@ -179,6 +179,28 @@ additional recording software is required. It writes uncompressed MDF 4.10 files
 in bounded chunks directly to the recording folder, with periodic flushes during
 capture. Stop recording or close CyderVis normally to save the final chunk.
 
+## Viewing a saved MF4 capture
+
+Select **Open MF4…** on the Trace tab to open a saved capture in its own viewer.
+Choose a channel group to browse raw CAN frames or recorded signal values with
+their units. **Previous**, **Next**, and the page number let you navigate the
+entire group. Select a row and use **Copy row** to copy its values. Times are
+relative to the file's start time, shown above the table in UTC.
+
+For raw CAN files, **Load DBC…** adds decoded message and signal values to the
+table. **Clear DBC** removes that decoding. Decoded MF4 signal files already
+contain their values and do not need a DBC. The viewer can remain open while
+using a live CAN interface; it reads files without transmitting their frames.
+CAN FD payloads longer than eight bytes are displayed raw without DBC decoding.
+
+The built-in Rust reader opens CyderVis recordings and row-based MDF 4 captures
+with uncompressed, deflate, or transposed-deflate data, including files made by
+the earlier Python recorder. Reads run in the background and only the requested
+page is displayed. Unsupported layouts or conversions are reported explicitly.
+The viewer supports up to 256 leaf channels per group, 65,536-byte records,
+128 MiB decompressed blocks and 16 million indexed records in unsorted files.
+Sorted recordings use direct access without a per-record index.
+
 ## Trace filters
 
 Use **Apply filter** on the Trace tab to select traffic with candump syntax. An

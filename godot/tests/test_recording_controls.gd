@@ -17,6 +17,8 @@ func _run() -> void:
 	controls._csv.button_pressed = true
 	assert(controls._csv.button_pressed and not controls._mf4.button_pressed)
 	assert(controls._mode.item_count == 3)
+	assert(controls._open_capture.text == "Open MF4…")
+	assert(not controls._open_capture.disabled)
 	await process_frame
 	await process_frame
 	assert(controls._start.disabled and controls._stop.disabled)
