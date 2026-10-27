@@ -12,8 +12,7 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if _can_bridge.is_alive():
-		_set_text(_can_bridge.get_recent_can_msgs())
+	_set_text(_can_bridge.get_recent_can_msgs())
 
 
 func _set_text(new_text: String) -> void:

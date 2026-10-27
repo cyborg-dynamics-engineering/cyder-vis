@@ -1,6 +1,8 @@
 mod can_parser;
+mod trace_filter;
 
 use crate::can_parser::CanParser;
+use crate::trace_filter::TraceFilter;
 use crosscan::CanInterface;
 use crosscan::can::CanFrame;
 use godot::classes::{Node, ResourceLoader, Script};
@@ -45,6 +47,7 @@ struct GodotCanBridge {
     start_time: Arc<Mutex<Instant>>,
     /// Holds the recent can frames with timestamps for trace
     trace_history: Arc<Mutex<VecDeque<CanFrame>>>,
+    trace_filter: Arc<Mutex<TraceFilter>>,
 
     /// Base Godot class (Rust module will be implemented as a Node in Godot)
     base: Base<Node>,
@@ -77,6 +80,7 @@ impl INode for GodotCanBridge {
             runtime: Runtime::new().unwrap(),
             start_time: Arc::new(Mutex::new(Instant::now())),
             trace_history: Arc::new(Mutex::new(VecDeque::new())),
+            trace_filter: Arc::new(Mutex::new(TraceFilter::default())),
             base,
         }
     }
@@ -252,11 +256,26 @@ impl GodotCanBridge {
     }
 
     #[func]
+    fn set_trace_filter(&mut self, input: String) -> String {
+        match TraceFilter::parse(&input) {
+            Ok(filter) => {
+                *self.runtime.block_on(self.trace_filter.lock()) = filter;
+                String::new()
+            }
+            Err(error) => error,
+        }
+    }
+
+    #[func]
     fn get_recent_can_msgs(&mut self) -> GString {
-        if self.is_alive() {
+        {
             let trace_history_lock = self.runtime.block_on(self.trace_history.lock());
+            let filter = self.runtime.block_on(self.trace_filter.lock());
             let mut gd_can_history = String::new();
             for frame in trace_history_lock.iter() {
+                if !filter.matches(frame, &self.interface) {
+                    continue;
+                }
                 // Push the raw CAN frame as a formatted String
                 gd_can_history.push_str(&format_can_frame(frame));
                 gd_can_history.push_str("\n");
@@ -268,7 +287,6 @@ impl GodotCanBridge {
             }
             return GString::from(gd_can_history);
         }
-        GString::new()
     }
 }
 

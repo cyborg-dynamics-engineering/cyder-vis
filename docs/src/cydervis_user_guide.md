@@ -71,3 +71,19 @@ To load a `.dbc` file:
 
 - **CyderVis doesn’t connect:**  
   Ensure the `canserver` is running and the interface name matches (e.g., `can0`).
+# Trace filters
+
+Use **Apply filter** on the Trace tab to select traffic with candump syntax. An
+empty field shows all data frames. Comma-separated rules use OR; add `j` to use
+AND. Invalid input leaves the previous filter active. Filtering does not change
+the receive table or plots.
+
+Examples: `123:7FF` selects ID 123 (including extended and remote frames);
+`123:C00007FF` selects only standard data frames with that ID;
+`00000123:DFFFFFFF` selects only extended ID 123; `400~700` excludes IDs matching
+that mask. `0~0,#FFFFFFFF` selects error frames only, when supplied by the CAN
+backend. An optional interface prefix such as `can0,123:7FF` is accepted.
+
+See the [candump manual](https://manpages.debian.org/testing/can-utils/candump.1.en.html)
+for ID, mask, inversion, error-mask and join semantics.
+
