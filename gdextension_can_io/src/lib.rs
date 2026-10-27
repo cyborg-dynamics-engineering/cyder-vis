@@ -7,6 +7,7 @@ mod recording;
 #[cfg(windows)]
 mod service_can;
 mod system_tools;
+mod timestamps;
 mod trace_filter;
 
 use crate::can_parser::CanParser;
@@ -118,6 +119,7 @@ impl GodotCanBridge {
             mode,
             &format,
             self.can_parser.clone(),
+            Some(*self.runtime.block_on(self.start_time.lock())),
         ) {
             Ok(value) => {
                 *recorder = Some(value);
@@ -553,6 +555,7 @@ async fn read_can(
         }
     };
 
+    let mut receive_clock = timestamps::Clock::default();
     loop {
         {
             let mut recording = recorder.lock().await;
@@ -601,14 +604,18 @@ async fn read_can(
 
         // Process the incoming CanFrame
         match res {
-            Ok(frame) => {
+            Ok(mut frame) => {
                 *bit_counter.lock().await += can_frame_bits(&frame);
 
-                let current_timestamp_us = { start_time.lock().await.elapsed().as_micros() };
+                let host_timestamp_us = u64::try_from(start_time.lock().await.elapsed().as_micros())
+                    .unwrap_or(u64::MAX);
+                let current_timestamp_us =
+                    receive_clock.timestamp(frame.timestamp(), host_timestamp_us);
+                frame.set_timestamp(Some(current_timestamp_us));
+                let current_timestamp_us = u128::from(current_timestamp_us);
 
                 // Add to the recent CAN history
-                let mut frame_with_timestamp = frame.clone();
-                frame_with_timestamp.set_timestamp(Some(current_timestamp_us.try_into().unwrap()));
+                let frame_with_timestamp = frame.clone();
 
                 {
                     let filter = trace_filter.lock().await.clone();
@@ -635,6 +642,16 @@ async fn read_can(
                 match can_entries.entry(frame.id()) {
                     Entry::Occupied(mut occupied_entry) => {
                         let can_entry = occupied_entry.get_mut();
+
+                        // Keep hardware event times in the trace/recording, but
+                        // do not feed reordered samples into interval arithmetic.
+                        if can_entry
+                            .timestamps
+                            .back()
+                            .is_some_and(|&previous| current_timestamp_us < previous)
+                        {
+                            continue;
+                        }
 
                         // push new timestamp
                         can_entry.timestamps.push_back(current_timestamp_us);

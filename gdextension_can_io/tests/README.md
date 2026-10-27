@@ -37,3 +37,10 @@ The Godot runner checks script errors and completion markers as well as exit
 codes. Interface command planning is tested without changing the host's network
 configuration; physical adapter operations still need Windows/Linux hardware
 validation.
+
+Timestamp tests inject hardware ticks with deliberately different host/delivery
+times and verify unchanged hardware spacing, zero/missing timestamps, reordered
+samples, extended counter rollover and clock resets. A mock service exercises
+the timestamp fields over the actual named-pipe protocol. MF4 tests verify that
+raw and decoded channels subtract recording start from the app timeline, so a
+capture started an hour after launch does not acquire an extra hour of offset.

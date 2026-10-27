@@ -26,6 +26,8 @@ def main():
             print(output)
             raise SystemExit("Test did not finish")
         print("PASS", " ".join(args))
+    if os.name == "nt":
+        subprocess.run([sys.executable, str(project / "tests/hardware_timestamps.py"), executable], check=True)
 
 
 if __name__ == "__main__":

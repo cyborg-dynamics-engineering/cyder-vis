@@ -43,6 +43,7 @@ pub(super) struct Mf4Writer {
     buses: HashMap<String, u8>,
     finished: bool,
     failure: Option<String>,
+    timestamp_origin_us: u64,
 }
 
 impl Mf4Writer {
@@ -50,6 +51,7 @@ impl Mf4Writer {
         raw: Option<File>,
         decoded: Option<File>,
         epoch_ns: u64,
+        timestamp_origin_us: u64,
     ) -> Result<Self, String> {
         Ok(Self {
             raw: raw
@@ -65,6 +67,7 @@ impl Mf4Writer {
             buses: HashMap::new(),
             finished: false,
             failure: None,
+            timestamp_origin_us,
         })
     }
 
@@ -75,6 +78,10 @@ impl Mf4Writer {
     }
 
     fn write_record(&mut self, record: &Record<'_>) -> io::Result<()> {
+        // Subtract integers before conversion to preserve microsecond spacing.
+        // Negative offsets are valid for queued frames captured before Start.
+        let timestamp_s =
+            (record.timestamp_us as i128 - self.timestamp_origin_us as i128) as f64 * 1e-6;
         if record.dlc > 8 || record.data.len() > 8 {
             return Err(invalid(
                 "MF4 capture supports classic CAN payloads up to 8 bytes.",
@@ -105,7 +112,7 @@ impl Mf4Writer {
                 group
             };
             let mut bytes = [0u8; 25];
-            bytes[..8].copy_from_slice(&(record.timestamp_us as f64 * 1e-6).to_le_bytes());
+            bytes[..8].copy_from_slice(&timestamp_s.to_le_bytes());
             bytes[8] = bus;
             bytes[9..13].copy_from_slice(&record.id.to_le_bytes());
             bytes[13] = u8::from(record.extended);
@@ -163,7 +170,7 @@ impl Mf4Writer {
                 group
             };
             let mut bytes = Vec::with_capacity((record.signals.len() + 1) * 8);
-            bytes.extend_from_slice(&(record.timestamp_us as f64 * 1e-6).to_le_bytes());
+            bytes.extend_from_slice(&timestamp_s.to_le_bytes());
             for signal in &record.signals {
                 bytes.extend_from_slice(&signal.value.to_le_bytes());
             }
@@ -617,6 +624,66 @@ mod tests {
                 self.bytes.seek(position)
             }
         }
+    }
+
+    #[test]
+    fn capture_time_origin_preserves_hardware_intervals_in_both_files() {
+        use crate::can_parser::CanParser;
+        use crate::recording::{DecodedSignal, reader::Capture};
+        use std::sync::atomic::AtomicBool;
+
+        let directory = std::env::temp_dir().join(format!("cyder clock {}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let raw = directory.join("raw.mf4");
+        let decoded = directory.join("decoded.mf4");
+        let origin = 3_600_000_000u64; // Start recording an hour after app launch.
+        let mut writer = Mf4Writer::start(
+            Some(File::create(&raw).unwrap()),
+            Some(File::create(&decoded).unwrap()),
+            1_710_000_000_000_000_000,
+            origin,
+        )
+        .unwrap();
+        for timestamp_us in [origin - 1000, origin + 5000, origin + 6000] {
+            writer
+                .record(&Record {
+                    timestamp_us,
+                    interface: "bench",
+                    id: 0x123,
+                    extended: false,
+                    remote: false,
+                    error: false,
+                    dlc: 1,
+                    data: &[42],
+                    message: "Sensor".into(),
+                    signals: vec![DecodedSignal {
+                        name: "value".into(),
+                        value: 42.,
+                        unit: "V".into(),
+                    }],
+                })
+                .unwrap();
+        }
+        writer.finish().unwrap();
+        drop(writer);
+        for path in [&raw, &decoded] {
+            let cancelled = AtomicBool::new(false);
+            let mut capture = Capture::open(path, &cancelled).unwrap();
+            assert_eq!(capture.info().start_time_ns, "1710000000000000000");
+            let page = capture
+                .page(0, 0, 500, &CanParser::new(), &cancelled)
+                .unwrap();
+            assert_eq!(
+                page.rows
+                    .iter()
+                    .map(|row| row[0].as_str())
+                    .collect::<Vec<_>>(),
+                ["-0.001", "0.005", "0.006"]
+            );
+        }
+        std::fs::remove_file(raw).unwrap();
+        std::fs::remove_file(decoded).unwrap();
+        std::fs::remove_dir(directory).unwrap();
     }
 
     #[test]

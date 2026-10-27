@@ -45,6 +45,7 @@ impl Recorder {
         mode: i32,
         format: &str,
         parser: CanParser,
+        timeline_start: Option<Instant>,
     ) -> Result<Self, String> {
         if !directory.is_dir() {
             return Err("Choose an existing recording directory.".into());
@@ -55,6 +56,13 @@ impl Recorder {
         if mode != 0 && parser.dbc().is_none() {
             return Err("Load a DBC before recording decoded signals.".into());
         }
+        // Pair the file's UTC start with its position on the application's
+        // receive timeline. MF4 stores offsets from this capture start.
+        let timestamp_origin_us = timeline_start
+            .map(|start| u64::try_from(start.elapsed().as_micros()))
+            .transpose()
+            .map_err(|_| "Recording time origin is out of range.")?
+            .unwrap_or(0);
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| e.to_string())?
@@ -111,6 +119,7 @@ impl Recorder {
                     raw_mf4.take(),
                     decoded_mf4.take(),
                     u64::try_from(stamp).map_err(|_| "MF4 file start time is out of range.")?,
+                    timestamp_origin_us,
                 )?)
             } else {
                 None
@@ -284,7 +293,7 @@ mod tests {
         std::fs::write(&dbc_path, dbc).unwrap();
         let mut parser = CanParser::new();
         parser.open_dbc(dbc_path.to_str().unwrap().into()).unwrap();
-        let mut recorder = Recorder::start(&directory, 2, "mf4", parser).unwrap();
+        let mut recorder = Recorder::start(&directory, 2, "mf4", parser, None).unwrap();
         let filter = TraceFilter::parse("0:0,#FFFFFFFF").unwrap();
         for stamp in 0..6000 {
             let mut frame =
@@ -394,7 +403,7 @@ mod tests {
         parser
             .open_dbc("../godot/tests/transmit.dbc".into())
             .unwrap();
-        let mut recorder = Recorder::start(&directory, 2, "csv", parser).unwrap();
+        let mut recorder = Recorder::start(&directory, 2, "csv", parser, None).unwrap();
         let filter = TraceFilter::parse("00010302:DFFFFFFF").unwrap();
         for stamp in 0..250 {
             let mut frame =
@@ -423,8 +432,8 @@ mod tests {
 
     #[test]
     fn validates_recording_options_and_quotes_csv() {
-        assert!(Recorder::start(Path::new("."), 1, "csv", CanParser::new()).is_err());
-        assert!(Recorder::start(Path::new("."), 3, "csv", CanParser::new()).is_err());
+        assert!(Recorder::start(Path::new("."), 1, "csv", CanParser::new(), None).is_err());
+        assert!(Recorder::start(Path::new("."), 3, "csv", CanParser::new(), None).is_err());
         let mut output = Vec::new();
         csv_row(&mut output, &["comma,value", "quote\"value", "new\nline"]).unwrap();
         assert_eq!(
@@ -464,7 +473,7 @@ mod tests {
                         .open_dbc("../godot/tests/transmit.dbc".into())
                         .unwrap();
                 }
-                let mut recorder = Recorder::start(&directory, mode, format, parser).unwrap();
+                let mut recorder = Recorder::start(&directory, mode, format, parser, None).unwrap();
                 assert_eq!(recorder.paths.len(), if mode == 2 { 2 } else { 1 });
                 recorder.finish().unwrap();
                 for path in &recorder.paths {

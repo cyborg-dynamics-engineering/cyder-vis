@@ -1,18 +1,23 @@
 //! Adapter for the versioned, multi-client win-can-utils service.
+use crate::timestamps::Clock;
 use crosscan::{CanInterface, can::CanFrame, protocol::*, service::ServiceClient};
 use std::io;
 
-pub struct ServiceCan(ServiceClient);
+pub struct ServiceCan {
+    client: ServiceClient,
+    hardware_clock: Clock,
+}
 
 impl CanInterface for ServiceCan {
     async fn open(name: &str) -> io::Result<Self> {
-        Ok(Self(
-            ServiceClient::connect(name, Subscription::default()).await?,
-        ))
+        Ok(Self {
+            client: ServiceClient::connect(name, Subscription::default()).await?,
+            hardware_clock: Clock::default(),
+        })
     }
 
     async fn get_bitrate(&mut self) -> io::Result<Option<u32>> {
-        match self.0.request(Command::Status).await? {
+        match self.client.request(Command::Status).await? {
             Reply::Status { status } if status.state == InterfaceState::Up => {
                 Ok(Some(status.bitrate))
             }
@@ -31,15 +36,18 @@ impl CanInterface for ServiceCan {
 
     async fn read_frame(&mut self) -> io::Result<CanFrame> {
         // next_event uses a channel receiver, so the UI's read timeout is cancellation safe.
-        let event = self.0.next_event().await?;
+        let event = self.client.next_event().await?;
         let mut frame = event.frame.to_can()?;
-        frame.set_timestamp(Some(event.timestamp_us));
+        frame.set_timestamp(Some(
+            self.hardware_clock
+                .hardware_timestamp(event.hardware_timestamp_us, event.timestamp_us),
+        ));
         Ok(frame)
     }
 
     async fn write_frame(&mut self, frame: CanFrame) -> io::Result<()> {
         match self
-            .0
+            .client
             .request(Command::Send {
                 frame: Frame::from(&frame),
             })
@@ -137,6 +145,26 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             pipe.write_all(&bytes).await.unwrap();
             pipe.flush().await.unwrap();
+            // Host delivery times deliberately disagree with the hardware
+            // spacing, including a valid zero counter and a host-only packet.
+            for (index, (hardware, host)) in [
+                (Some(0), 200_000),
+                (Some(1000), 999_999),
+                (Some(2000), 1_999_999),
+                (None, 202_500),
+                (Some(3000), 2_999_999),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut next = message.clone();
+                if let ServerBody::Frame { event } = &mut next.body {
+                    event.sequence = index as u64 + 2;
+                    event.timestamp_us = host;
+                    event.hardware_timestamp_us = hardware;
+                }
+                write_message(&mut pipe, &next).await.unwrap();
+            }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         });
         let mut client = ServiceCan::open(&name).await.unwrap();
@@ -157,6 +185,12 @@ mod tests {
         assert_eq!(frame.id(), 0x456);
         assert_eq!(frame.data(), [4, 5]);
         assert_eq!(frame.timestamp(), Some(123_456));
+        for expected in [200_000, 201_000, 202_000, 202_500, 203_000] {
+            assert_eq!(
+                client.read_frame().await.unwrap().timestamp(),
+                Some(expected)
+            );
+        }
         peer.await.unwrap();
     }
 }

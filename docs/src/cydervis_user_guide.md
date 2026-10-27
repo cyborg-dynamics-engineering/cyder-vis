@@ -168,11 +168,21 @@ capture requires the loaded DBC. Unknown, remote and error frames, and frames wi
 truncated or non-finite signals, do not produce decoded samples. Values are saved
 before display rounding, with their units.
 
-CSV raw columns contain timestamp in microseconds since app startup, interface,
+Receive timestamps prefer the adapter's hardware clock when the Windows CAN
+service supplies one. The hardware counter is aligned once to the application's
+timeline, preserving hardware-measured intervals despite USB, service or UI
+delays. Frames without a hardware timestamp use the service's host timestamp;
+the current Linux SocketCAN backend uses application receive time. Reconnecting
+or a substantial backward clock reset establishes a new clock alignment.
+
+CSV raw columns contain timestamp in microseconds on the app timeline, interface,
 hex CAN ID, frame flags, DLC and hex bytes. Decoded CSV has one row per signal
 with message and signal names, value and unit. MF4 raw files use the standard CAN
 bus logging layout; decoded files contain time series named `Message.Signal`.
-MF4 time channels use seconds with a common file start time for both files.
+MF4 time channels use seconds from recording start, with a common file start
+time for raw and decoded files. Hardware clock intervals are retained; the UTC
+origin is aligned to the host clock. A queued frame timestamped before recording
+started can have a negative time offset.
 
 MF4 capture uses a Rust writer compiled into CyderVis; no Python installation or
 additional recording software is required. It writes uncompressed MDF 4.10 files
