@@ -71,6 +71,32 @@ To load a `.dbc` file:
 
 - **CyderVis doesn’t connect:**  
   Ensure the `canserver` is running and the interface name matches (e.g., `can0`).
+## Transmit messages from the DBC
+
+Load the same DBC used for decoding on the Interface tab, then select **Add DBC
+message** on the Transmit tab. Choose a message to populate its ID, frame format
+and named signal fields. Messages start with sending disabled. Enter physical
+values for floats and scaled signals; unscaled unsigned fields accept decimal
+integers or `0x`-prefixed hex. Bounds, bit widths and scaling are checked before
+transmission. **Add New** remains available for raw hex frames.
+
+DBC float32/float64 signals must declare `SIG_VALTYPE_` (1 for float32, 2 for
+float64). Extended IDs in DBC files include bit 31: ID `0x10302` is written as
+`2147549954`. For example:
+
+```text
+BO_ 2147549954 SetComplementaryFilter: 8 PC
+ SG_ alpha : 0|32@1+ (1,0) [0.001|0.1] "" Device
+ SG_ odr : 32|8@1+ (1,0) [0|11] "" Device
+ SG_ output_type : 40|8@1+ (1,0) [0|1] "" Device
+SIG_VALTYPE_ 2147549954 alpha : 1;
+```
+
+Replacing or clearing the DBC disables existing DBC transmit rows; add them again
+to use the new definitions. Multiplexed, overlapping or CAN FD definitions show a
+reason they cannot be selected; use raw hex for unsupported classic CAN layouts.
+Ranges with equal minimum and maximum are treated as unspecified.
+
 ## Interface controls
 
 On the Interface tab, set the name and bitrate, then use **Bring up / Restart**.

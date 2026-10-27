@@ -14,6 +14,8 @@ class_name TransmitTable
 @onready var table_send_delete_button = preload("res://assets/tables/transmit_table/send_delete_cell.tscn")
 @onready var send_entries: Array = []
 @onready var rows: Control = get_node("Rows")
+var dbc_messages: Array = []
+var _dbc_json: String = ""
 
 const DELETE_IDX = 0
 const TOGGLE_IDX = 1
@@ -28,6 +30,49 @@ const CELL_WIDTHS = [60, 60, 120, 60, 120, 250]
 
 func _ready() -> void:
 	_generate_header_row()
+	refresh_dbc()
+
+
+func refresh_dbc() -> void:
+	var definitions: String = godot_can_bridge.dbc_transmit_definitions()
+	if definitions == _dbc_json:
+		return
+	_dbc_json = definitions
+	dbc_messages = JSON.parse_string(definitions)
+	for entry: TransmitTableEntry in send_entries:
+		entry.clear_dbc()
+
+
+func _choose_dbc_message() -> void:
+	refresh_dbc()
+	if dbc_messages.is_empty():
+		AlertHandler.display_error("Load a DBC file on the Interface tab first.")
+		return
+	var dialog := AcceptDialog.new()
+	dialog.title = "Add DBC transmit message"
+	add_child(dialog)
+	var options := ItemList.new()
+	options.custom_minimum_size = Vector2(500, 250)
+	dialog.add_child(options)
+	for message: Dictionary in dbc_messages:
+		options.add_item("%08X  %s" % [int(message.id), message.name])
+		options.set_item_tooltip(options.item_count - 1, message.error)
+		options.set_item_disabled(options.item_count - 1, not message.error.is_empty())
+	dialog.get_ok_button().disabled = true
+	options.item_selected.connect(func(_index: int): dialog.get_ok_button().disabled = false)
+	dialog.confirmed.connect(func():
+		var selected := options.get_selected_items()
+		if not selected.is_empty():
+			add_dbc_send_entry(dbc_messages[selected[0]])
+		dialog.queue_free())
+	dialog.canceled.connect(dialog.queue_free)
+	dialog.popup_centered()
+
+
+func add_dbc_send_entry(message: Dictionary) -> void:
+	var entry := TransmitTableEntry.new(godot_can_bridge, self)
+	send_entries.append(entry)
+	entry.configure_dbc(message)
 
 
 func _physics_process(_delta: float) -> void:
@@ -102,6 +147,9 @@ class TransmitTableEntry:
 	var _can_id_box: LineEdit
 	var _data_box: LineEdit
 	var _cycle_time_box: LineEdit
+	var _dbc_message: Dictionary = {}
+	var _signal_fields: Array[LineEdit] = []
+	var _signal_container: VBoxContainer
 
 
 	func _init(godot_can_bridge: GodotCanBridge, transmit_table: TransmitTable) -> void:
@@ -146,6 +194,11 @@ class TransmitTableEntry:
 				_can_id_box.editable = not toggled_on
 				_data_box.editable = not toggled_on
 				_extended_id_check_box.disabled = toggled_on
+				if not _dbc_message.is_empty():
+					_can_id_box.editable = false
+					_extended_id_check_box.disabled = true
+				for field in _signal_fields:
+					field.editable = not toggled_on
 
 				# Update tooltips for each element
 				var tooltip_string: String = "Cannot modify message while sending" if toggled_on else ""
@@ -211,7 +264,10 @@ class TransmitTableEntry:
 		data_cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_data_box = data_cell.get_node("LineEdit")
 		_data_box.text = ""
-		_row.add_child(data_cell)
+		_signal_container = VBoxContainer.new()
+		_row.add_child(_signal_container)
+		_signal_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_signal_container.add_child(data_cell)
 
 		# Add byte seperation formatting and character validation for Data box
 		_data_box.max_length = 23
@@ -237,6 +293,49 @@ class TransmitTableEntry:
 				_data_box.text = filtered
 				_data_box.caret_column = min(old_cursor_pos - (new_text.length() - filtered.length()), _data_box.text.length())
 		)
+
+
+	func configure_dbc(message: Dictionary) -> void:
+		_dbc_message = message
+		_can_id_box.text = "%X" % int(message.id)
+		_can_id_box.editable = false
+		_extended_id_check_box.button_pressed = message.extended
+		_extended_id_check_box.disabled = true
+		_data_box.get_parent().hide()
+		var title := Label.new()
+		title.text = message.name
+		_signal_container.add_child(title)
+		for signal_info: Dictionary in message.signals:
+			var row := HBoxContainer.new()
+			_signal_container.add_child(row)
+			var label := Label.new()
+			label.text = "%s [%s] %s" % [signal_info.name, signal_info.kind, signal_info.unit]
+			label.custom_minimum_size.x = 180
+			row.add_child(label)
+			var field := LineEdit.new()
+			field.text = signal_info.initial
+			field.placeholder_text = "0x-prefixed hex or decimal" if signal_info.kind.begins_with("hex") else "Numeric value"
+			field.tooltip_text = "Bounds: %s to %s" % [signal_info.min, signal_info.max]
+			field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(field)
+			_signal_fields.append(field)
+
+
+	func clear_dbc() -> void:
+		if _dbc_message.is_empty():
+			return
+		_check_box.button_pressed = false
+		_dbc_message.clear()
+		_signal_fields.clear()
+		for child in _signal_container.get_children().slice(1):
+			child.queue_free()
+		_data_box.get_parent().show()
+		_can_id_box.editable = true
+		_extended_id_check_box.disabled = false
+		# Do not silently transmit zeros after replacing a DBC definition.
+		_data_box.text = ""
+		_check_box.disabled = true
+		_check_box.tooltip_text = "DBC changed. Delete this row and add it again before sending."
 
 
 	func can_id() -> int:
@@ -301,7 +400,18 @@ class TransmitTableEntry:
 				AlertHandler.display_error("CAN ID is greater than the max Extended CAN ID")
 				return
 
-			_godot_can_bridge.send_can_frame(can_id(), is_ext_can(), data())
+			var payload := data()
+			if not _dbc_message.is_empty():
+				var inputs: Array[String] = []
+				for field in _signal_fields:
+					inputs.append(field.text)
+				var encoded: Dictionary = JSON.parse_string(_godot_can_bridge.encode_dbc_frame(can_id(), is_ext_can(), JSON.stringify(inputs)))
+				if encoded.has("error"):
+					_check_box.button_pressed = false
+					AlertHandler.display_error(encoded.error)
+					return
+				payload = encoded.data
+			_godot_can_bridge.send_can_frame(can_id(), is_ext_can(), payload)
 			_last_send_time_ms = current_time_ms
 		
 		# A cycle time of 0ms should be treated as 'one shot', so disable itself after sending the message

@@ -1,4 +1,5 @@
 mod can_parser;
+mod dbc_transmit;
 mod interface_manager;
 mod system_tools;
 mod trace_filter;
@@ -92,6 +93,28 @@ impl INode for GodotCanBridge {
 
 #[godot_api]
 impl GodotCanBridge {
+    #[func]
+    fn dbc_transmit_definitions(&self) -> String {
+        self.can_parser
+            .dbc()
+            .map(|dbc| serde_json::to_string(&dbc_transmit::definitions(dbc)).unwrap())
+            .unwrap_or_else(|| "[]".into())
+    }
+
+    #[func]
+    fn encode_dbc_frame(&self, id: u32, extended: bool, inputs_json: String) -> String {
+        let result = (|| {
+            let dbc = self.can_parser.dbc().ok_or("Load a DBC file first")?;
+            let inputs: Vec<String> =
+                serde_json::from_str(&inputs_json).map_err(|e| e.to_string())?;
+            dbc_transmit::encode(dbc, id, extended, &inputs)
+        })();
+        match result {
+            Ok(data) => serde_json::json!({"data": data}).to_string(),
+            Err(error) => serde_json::json!({"error": error}).to_string(),
+        }
+    }
+
     #[func]
     fn check_dependencies(&self) -> String {
         system_tools::can_utils_warning()

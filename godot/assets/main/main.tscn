@@ -99,7 +99,7 @@ grow_vertical = 2
 text = "CAN Interface:"
 vertical_alignment = 1
 
-[node name="PauseButton" type="Button" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("_can_bridge", "_interface_box", "_tab_container", "_receive_table", "_dbc_line_edit", "_dbc_open_button", "_status_bar")]
+[node name="PauseButton" type="Button" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("_can_bridge", "_interface_box", "_tab_container", "_receive_table", "_dbc_line_edit", "_dbc_open_button", "_status_bar", "_transmit_table")]
 layout_mode = 1
 anchors_preset = -1
 offset_left = 302.0
@@ -116,6 +116,7 @@ _receive_table = NodePath("../../../MarginContainer/ReceiveTable")
 _dbc_line_edit = NodePath("../DbcFileBox")
 _dbc_open_button = NodePath("../DbcFileButton")
 _status_bar = NodePath("../../../../StatusBar")
+_transmit_table = NodePath("../../Transmit/TransmitTable")
 
 [node name="DbcFileBox" type="LineEdit" parent="Background/VSplitContainer/TabContainer/Interface"]
 layout_mode = 1
@@ -136,7 +137,7 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "DBC File:	"
 
-[node name="DbcFileButton" type="Button" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("_can_bridge", "_dbc_file_box", "_receive_table")]
+[node name="DbcFileButton" type="Button" parent="Background/VSplitContainer/TabContainer/Interface" node_paths=PackedStringArray("_can_bridge", "_dbc_file_box", "_receive_table", "_transmit_table")]
 layout_mode = 1
 offset_left = 570.0
 offset_top = 67.0
@@ -147,6 +148,7 @@ script = ExtResource("5_by4fb")
 _can_bridge = NodePath("../../../../../GodotCanBridge")
 _dbc_file_box = NodePath("../DbcFileBox")
 _receive_table = NodePath("../../../MarginContainer/ReceiveTable")
+_transmit_table = NodePath("../../Transmit/TransmitTable")
 
 [node name="CanIdFormatLabel" type="Label" parent="Background/VSplitContainer/TabContainer/Interface"]
 layout_mode = 0
@@ -294,6 +296,19 @@ grow_vertical = 0
 text = "Add New"
 script = ExtResource("9_by4fb")
 transmit_table = NodePath("../TransmitTable")
+
+[node name="AddDbcMessage" type="Button" parent="Background/VSplitContainer/TabContainer/Transmit" node_paths=PackedStringArray("transmit_table")]
+layout_mode = 1
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 360.0
+offset_top = -67.0
+offset_right = 540.0
+offset_bottom = -17.0
+text = "Add DBC message"
+script = ExtResource("9_by4fb")
+transmit_table = NodePath("../TransmitTable")
+use_dbc = true
 
 [node name="ConversionCalculator" type="Button" parent="Background/VSplitContainer/TabContainer/Transmit"]
 layout_mode = 1

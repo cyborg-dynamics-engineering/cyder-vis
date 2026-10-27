@@ -1,0 +1,11 @@
+VERSION ""
+NS_ :
+BS_:
+BU_: PC Device
+
+BO_ 2147549954 SetComplementaryFilter: 8 PC
+ SG_ alpha : 0|32@1+ (1,0) [0.001|0.1] "" Device
+ SG_ odr : 32|8@1+ (1,0) [0|11] "" Device
+ SG_ output_type : 40|8@1+ (1,0) [0|1] "" Device
+
+SIG_VALTYPE_ 2147549954 alpha : 1;

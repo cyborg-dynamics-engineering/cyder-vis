@@ -37,11 +37,16 @@ mod dbc_helpers {
     }
 }
 
+#[derive(Clone)]
 pub struct CanParser {
     dbc: Option<Dbc>,
 }
 
 impl CanParser {
+    pub fn dbc(&self) -> Option<&Dbc> {
+        self.dbc.as_ref()
+    }
+
     pub fn new() -> Self {
         return Self { dbc: None };
     }

@@ -5,11 +5,13 @@ class_name DbcFileButton
 @export var _can_bridge: GodotCanBridge
 @export var _dbc_file_box: LineEdit
 @export var _receive_table: ReceiveTable
+@export var _transmit_table: TransmitTable
 
 
 func _ready() -> void:
 	self.pressed.connect(_button_pressed)
 	_dbc_file_box.text_changed.connect(_dbc_text_changed)
+	_dbc_file_box.text_submitted.connect(_process_file)
 
 
 func _button_pressed() -> void:
@@ -42,8 +44,12 @@ func _process_file(x: String) -> void:
 	if dbc_success:
 		_dbc_file_box.text = x
 		_dbc_text_changed(x) # Setting the text variable doesn't trigger this signal, so trigger manually
+		_transmit_table.refresh_dbc()
 
 
-func _dbc_text_changed(_new_text: String):
+func _dbc_text_changed(new_text: String):
+	if new_text.strip_edges().is_empty():
+		_can_bridge.load_dbc_file("")
+		_transmit_table.refresh_dbc()
 	# Clear the receive table as a different DBC file may require certain messages to be redrawn as deserialised/serialised versions
 	_receive_table.clear_all()

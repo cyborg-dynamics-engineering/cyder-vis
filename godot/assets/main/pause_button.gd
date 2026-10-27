@@ -9,6 +9,7 @@ class_name PauseButton
 @export var _dbc_line_edit: LineEdit
 @export var _dbc_open_button: Button
 @export var _status_bar: StatusBar
+@export var _transmit_table: TransmitTable
 
 var _is_paused: bool
 
@@ -46,6 +47,7 @@ func _button_pressed() -> void:
 		var dbc_load_success: bool = _can_bridge.load_dbc_file(_dbc_line_edit.text)
 		if not dbc_load_success:
 			return
+		_transmit_table.refresh_dbc()
 
 		var can_up_success: bool = _can_bridge.configure_bus(_interface_box.text)
 		if not can_up_success:
@@ -72,12 +74,12 @@ func _update_text() -> void:
 		text = "Pause"
 
 
-# Updates the selectability of the tabs (Can only use the tabs when an interface is actively connected)
+# Configuration and conversion tools remain available before connecting.
 func _update_tab_selectability() -> void:
 	var should_disable_tabs: bool = _is_paused and _receive_table.is_empty()
 
 	for i in range(1, _tab_container.get_child_count()):
-		_tab_container.set_tab_disabled(i, should_disable_tabs)
+		_tab_container.set_tab_disabled(i, should_disable_tabs and i == 1)
 
 
 func _update_dbc_editability() -> void:
