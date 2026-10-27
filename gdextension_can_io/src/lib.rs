@@ -1,4 +1,5 @@
 mod can_parser;
+mod system_tools;
 mod trace_filter;
 
 use crate::can_parser::CanParser;
@@ -89,6 +90,11 @@ impl INode for GodotCanBridge {
 #[godot_api]
 impl GodotCanBridge {
     #[func]
+    fn check_dependencies(&self) -> String {
+        system_tools::can_utils_warning()
+    }
+
+    #[func]
     fn load_dbc_file(&mut self, dbc_filepath: String) -> bool {
         // Empty filepath, assume user does not have a DBC file
         if dbc_filepath.trim().is_empty() {
@@ -121,6 +127,11 @@ impl GodotCanBridge {
 
     #[func]
     fn configure_bus(&mut self, interface_name: String) -> bool {
+        let warning = self.check_dependencies();
+        if !warning.is_empty() {
+            error_alert_godot(warning);
+            return false;
+        }
         // Check if multithreading is functional in this godot-rust version
         if let Err(err) = std::thread::spawn(|| {
             godot_print!("RUST threading successful");

@@ -38,7 +38,8 @@ static func display_error(msg: String) -> void:
 	alert_box.size = Vector2i(_handler_instance.get_viewport().size.x / 2, 100)
 
 	# Add to scene BEFORE querying children / get_label()
-	singleton().get_tree().current_scene.add_child(alert_box)
+	# The current scene can still be unset while startup dependency checks run.
+	singleton().add_child(alert_box)
 
 	# Apply font directly to the internal Label and OK button
 	var text_label: Label = alert_box.get_label()
